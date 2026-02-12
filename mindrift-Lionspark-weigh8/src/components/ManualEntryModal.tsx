@@ -1,0 +1,379 @@
+'use client';
+
+import { useState } from 'react';
+import { X, Search, Truck, User, Package, MapPin, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface ManualEntryModalProps {
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+interface Allocation {
+  id: number;
+  vehicleReg: string;
+  driverName: string | null;
+  driverPhone: string | null;
+  transporter: string | null;
+  orderNumber: string | null;
+  product: string | null;
+  customer: string | null;
+  origin: string | null;
+  destination: string | null;
+  status: string;
+  scheduledDate: string | null;
+  grossWeight: string | null;
+  tareWeight: string | null;
+  netWeight: string | null;
+}
+
+export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModalProps) {
+  const [plateNumber, setPlateNumber] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [allocation, setAllocation] = useState<Allocation | null>(null);
+  const [searchPerformed, setSearchPerformed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSearch = async () => {
+    if (!plateNumber.trim()) {
+      setError('Please enter a plate number');
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      setError(null);
+      setSearchPerformed(false);
+
+      // Remove all spaces from plate number for searching
+      const cleanedPlateNumber = plateNumber.replace(/\s+/g, '').trim();
+
+      const response = await fetch(
+        `http://localhost:3001/api/truck-allocations?vehicleReg=${encodeURIComponent(cleanedPlateNumber)}`
+      );
+      const result = await response.json();
+
+      if (result.success && result.data && result.data.length > 0) {
+        // Find allocation matching the plate number (ignoring spaces)
+        const foundAllocation = result.data.find(
+          (a: Allocation) => a.vehicleReg.replace(/\s+/g, '').toLowerCase() === cleanedPlateNumber.toLowerCase()
+        );
+
+        if (foundAllocation) {
+          setAllocation(foundAllocation);
+        } else {
+          setAllocation(null);
+        }
+      } else {
+        setAllocation(null);
+      }
+
+      setSearchPerformed(true);
+    } catch (err) {
+      console.error('Search error:', err);
+      setError('Failed to search for allocation');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleConfirmCheckIn = async () => {
+    if (!allocation) return;
+
+    try {
+      setIsCheckingIn(true);
+      setError(null);
+
+      const response = await fetch(
+        `http://localhost:3001/api/truck-allocations/${allocation.id}/status`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status: 'arrived',
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.success) {
+        onSuccess();
+        onClose();
+      } else {
+        setError(result.error || 'Failed to check in truck');
+      }
+    } catch (err) {
+      console.error('Check-in error:', err);
+      setError('Network error occurred during check-in');
+    } finally {
+      setIsCheckingIn(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !isSearching) {
+      handleSearch();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl animate-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+              <Search className="w-7 h-7 text-blue-600" />
+              Manual Entry - Plate Lookup
+            </h2>
+            <p className="text-sm text-slate-600 mt-1">
+              Enter plate number to find and check in truck
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-slate-100 rounded-lg transition"
+          >
+            <X className="w-5 h-5 text-slate-600" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {/* Search Input */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Plate Number / Vehicle Registration
+            </label>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={plateNumber}
+                onChange={(e) => {
+                  setPlateNumber(e.target.value.toUpperCase());
+                  setSearchPerformed(false);
+                  setAllocation(null);
+                  setError(null);
+                }}
+                onKeyPress={handleKeyPress}
+                placeholder="e.g., ABC123GP"
+                className="flex-1 px-4 py-3 border border-slate-300 rounded-lg text-lg font-bold text-slate-900 uppercase tracking-wider focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                autoFocus
+              />
+              <button
+                onClick={handleSearch}
+                disabled={isSearching || !plateNumber.trim()}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isSearching ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-5 h-5" />
+                    Search
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Search Results */}
+          {searchPerformed && !isSearching && (
+            <div>
+              {allocation ? (
+                /* Allocation Found */
+                <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6 space-y-4 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-3 pb-4 border-b border-green-200">
+                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                      <CheckCircle className="w-6 h-6 text-green-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-green-900">Allocation Found!</h3>
+                      <p className="text-sm text-green-700">
+                        Truck allocation exists for plate <span className="font-bold">{allocation.vehicleReg}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Truck className="w-4 h-4 text-green-600" />
+                        <p className="text-xs font-semibold text-green-800 uppercase">Vehicle</p>
+                      </div>
+                      <p className="text-sm font-bold text-slate-900">{allocation.vehicleReg}</p>
+                      {allocation.transporter && (
+                        <p className="text-xs text-slate-600 mt-1">{allocation.transporter}</p>
+                      )}
+                    </div>
+
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <User className="w-4 h-4 text-green-600" />
+                        <p className="text-xs font-semibold text-green-800 uppercase">Driver</p>
+                      </div>
+                      <p className="text-sm font-bold text-slate-900">
+                        {allocation.driverName || 'N/A'}
+                      </p>
+                      {allocation.driverPhone && (
+                        <p className="text-xs text-slate-600 mt-1">{allocation.driverPhone}</p>
+                      )}
+                    </div>
+
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Package className="w-4 h-4 text-green-600" />
+                        <p className="text-xs font-semibold text-green-800 uppercase">Order</p>
+                      </div>
+                      <p className="text-sm font-bold text-slate-900">
+                        {allocation.orderNumber || `Order #${allocation.id}`}
+                      </p>
+                      {allocation.customer && (
+                        <p className="text-xs text-slate-600 mt-1">{allocation.customer}</p>
+                      )}
+                    </div>
+
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <MapPin className="w-4 h-4 text-green-600" />
+                        <p className="text-xs font-semibold text-green-800 uppercase">Product</p>
+                      </div>
+                      <p className="text-sm font-bold text-slate-900">
+                        {allocation.product || 'N/A'}
+                      </p>
+                      {allocation.origin && (
+                        <p className="text-xs text-slate-600 mt-1">From: {allocation.origin}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Weight Details */}
+                  {(allocation.grossWeight || allocation.tareWeight || allocation.netWeight) && (
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <p className="text-xs font-semibold text-green-800 uppercase mb-3">Weight Details</p>
+                      <div className="grid grid-cols-3 gap-3">
+                        {allocation.grossWeight && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Gross</p>
+                            <p className="text-sm font-bold text-slate-900">{allocation.grossWeight}t</p>
+                          </div>
+                        )}
+                        {allocation.tareWeight && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Tare</p>
+                            <p className="text-sm font-bold text-slate-900">{allocation.tareWeight}t</p>
+                          </div>
+                        )}
+                        {allocation.netWeight && (
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Net</p>
+                            <p className="text-sm font-bold text-green-700 font-mono">{allocation.netWeight}t</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="bg-white rounded-lg p-4 border border-green-200">
+                    <p className="text-xs font-semibold text-green-800 uppercase mb-2">Current Status</p>
+                    <span className={cn(
+                      'inline-flex px-3 py-1.5 rounded-full text-xs font-semibold border',
+                      allocation.status === 'scheduled' && 'bg-blue-50 text-blue-700 border-blue-200',
+                      allocation.status === 'in_transit' && 'bg-amber-50 text-amber-700 border-amber-200',
+                      allocation.status === 'arrived' && 'bg-green-50 text-green-700 border-green-200',
+                      allocation.status === 'weighing' && 'bg-purple-50 text-purple-700 border-purple-200',
+                      allocation.status === 'completed' && 'bg-slate-50 text-slate-700 border-slate-200'
+                    )}>
+                      {allocation.status.toUpperCase()}
+                    </span>
+
+                    {['arrived', 'weighing', 'completed'].includes(allocation.status) && (
+                      <p className="text-xs text-amber-600 mt-2 font-medium">
+                        ⚠️ This truck has already been checked in
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Allocation Not Found */
+                <div className="bg-red-50 border-2 border-red-200 rounded-xl p-6 space-y-4 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-3 pb-4 border-b border-red-200">
+                    <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                      <AlertCircle className="w-6 h-6 text-red-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-red-900">No Allocation Found</h3>
+                      <p className="text-sm text-red-700">
+                        Plate <span className="font-bold">{plateNumber}</span> does not have an active allocation
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-lg p-4 border border-red-200">
+                    <p className="text-sm text-slate-700 mb-3">
+                      This vehicle is not scheduled for delivery today. Possible reasons:
+                    </p>
+                    <ul className="text-sm text-slate-600 space-y-1 list-disc list-inside">
+                      <li>No order allocated to this vehicle</li>
+                      <li>Plate number may be incorrect or misspelled</li>
+                      <li>Truck not scheduled for today's operations</li>
+                    </ul>
+                  </div>
+
+                  <p className="text-xs text-slate-500 text-center">
+                    Please verify the plate number or create a new allocation in the Orders section
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-3 rounded-b-2xl">
+          <button
+            onClick={onClose}
+            disabled={isCheckingIn}
+            className="px-6 py-2.5 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 transition font-medium disabled:opacity-50"
+          >
+            Cancel
+          </button>
+
+          {allocation && !['arrived', 'weighing', 'completed'].includes(allocation.status) && (
+            <button
+              onClick={handleConfirmCheckIn}
+              disabled={isCheckingIn}
+              className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isCheckingIn ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Checking In...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-5 h-5" />
+                  Confirm Check In
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

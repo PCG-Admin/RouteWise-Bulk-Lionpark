@@ -1,0 +1,536 @@
+"use client";
+
+import { RefreshCw, TrendingUp, Clock, CheckCircle2, Truck, Filter, Box, X, Calendar as CalendarIcon, ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
+import { VisitDetailSlideOver } from "@/components/VisitDetailSlideOver";
+import { Modal } from "@/components/ui/Modal";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
+
+type Stage = "staging" | "pending_arrival" | "checked_in" | "departed";
+
+type FilterBarProps = {
+    filters: {
+        customer: string;
+        date: string;
+        collection: string;
+        transporter: string;
+    };
+    setFilters: (filters: { customer: string; date: string; collection: string; transporter: string }) => void;
+    trucks: any[];
+};
+
+const stages: { id: Stage; title: string; icon: any; color: string; bgColor: string; count: number }[] = [
+    { id: "staging", title: "Staging", icon: Box, color: "text-amber-600", bgColor: "bg-amber-50", count: 643 },
+    { id: "pending_arrival", title: "Pending Arrival", icon: Clock, color: "text-blue-600", bgColor: "bg-blue-50", count: 357 },
+    { id: "checked_in", title: "Checked In", icon: CheckCircle2, color: "text-emerald-600", bgColor: "bg-emerald-50", count: 0 },
+    { id: "departed", title: "Departed", icon: TrendingUp, color: "text-purple-600", bgColor: "bg-purple-50", count: 0 },
+];
+
+
+function CustomSelect({ label, value, onChange, options, placeholder = "Select..." }: { label: string, value: string, onChange: (val: string) => void, options: string[], placeholder?: string }) {
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+        <div className="relative flex-1">
+            {/* Backdrop for closing */}
+            {isOpen && (
+                <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+            )}
+
+            <div
+                onClick={() => setIsOpen(!isOpen)}
+                className={cn(
+                    "bg-white rounded-xl border shadow-sm p-3 cursor-pointer transition-all relative z-20",
+                    isOpen ? "border-blue-500 ring-1 ring-blue-500" : "border-slate-200 hover:border-slate-300"
+                )}
+            >
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block cursor-pointer">{label}</label>
+                <div className="flex items-center justify-between gap-2">
+                    <span className={cn("text-sm font-bold truncate", value ? "text-slate-700" : "text-slate-400")}>
+                        {value || placeholder}
+                    </span>
+                    <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform", isOpen && "rotate-180")} />
+                </div>
+            </div>
+
+            {/* Dropdown Menu */}
+            {isOpen && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-30 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-100">
+                    <div
+                        onClick={() => { onChange(""); setIsOpen(false); }}
+                        className="px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 cursor-pointer border-b border-slate-50"
+                    >
+                        {placeholder}
+                    </div>
+                    {options.map((option) => (
+                        <div
+                            key={option}
+                            onClick={() => { onChange(option); setIsOpen(false); }}
+                            className={cn(
+                                "px-4 py-2.5 text-sm font-bold cursor-pointer transition-colors",
+                                value === option ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-slate-50"
+                            )}
+                        >
+                            {option}
+                        </div>
+                    ))}
+                    {options.length === 0 && (
+                        <div className="px-4 py-3 text-xs text-slate-400 text-center">No options available</div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function FilterBar({ filters, setFilters, trucks }: FilterBarProps) {
+    const trucksArray = Array.isArray(trucks) ? trucks : [];
+    const clearFilters = () => {
+        setFilters({
+            customer: "",
+            date: "",
+            collection: "",
+            transporter: ""
+        });
+    };
+
+    const hasActiveFilters = Object.values(filters).some(value => value !== "");
+
+    return (
+        <div className="flex flex-col md:flex-row gap-4">
+            <CustomSelect
+                label="Customer"
+                value={filters.customer}
+                onChange={(val) => setFilters({ ...filters, customer: val })}
+                options={Array.from(new Set(trucksArray.map((t: any) => t.customer))).sort()}
+                placeholder="All Customers"
+            />
+
+            {/* Date Filter - kept as input but styled to match */}
+            <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm p-3 hover:border-slate-300 transition-colors">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Order Date</label>
+                <div className="relative">
+                    <input
+                        type="date"
+                        className="w-full text-sm font-bold text-slate-700 bg-transparent border-none p-0 focus:ring-0 cursor-pointer min-h-[20px] font-sans"
+                        value={filters.date}
+                        onChange={(e) => setFilters({ ...filters, date: e.target.value })}
+                        placeholder="yyyy/mm/dd"
+                    />
+                </div>
+            </div>
+
+            <CustomSelect
+                label="Collection Point"
+                value={filters.collection}
+                onChange={(val) => setFilters({ ...filters, collection: val })}
+                options={Array.from(new Set(trucksArray.map((t: any) => t.collection))).sort()}
+                placeholder="All Sites"
+            />
+
+            <CustomSelect
+                label="Transporter"
+                value={filters.transporter}
+                onChange={(val) => setFilters({ ...filters, transporter: val })}
+                options={Array.from(new Set(trucksArray.map((t: any) => t.transporter))).sort()}
+                placeholder="All Transporters"
+            />
+
+            {/* Clear Button */}
+            <div className="flex items-center justify-center">
+                <button
+                    onClick={clearFilters}
+                    disabled={!hasActiveFilters}
+                    className={cn(
+                        "flex items-center gap-1.5 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wide transition-all whitespace-nowrap border shadow-sm h-full",
+                        hasActiveFilters
+                            ? "bg-white text-red-600 hover:bg-red-50 border-red-100 hover:border-red-200"
+                            : "bg-transparent text-slate-300 border-transparent cursor-not-allowed hidden md:flex"
+                    )}
+                >
+                    <span>Clear Filters</span>
+                    <X className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    );
+}
+
+export default function LoadingBoardPage() {
+    const [trucks, setTrucks] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [selectedTruck, setSelectedTruck] = useState<any>(null);
+    const [expandedStage, setExpandedStage] = useState<Stage | null>(null);
+    const [filters, setFilters] = useState({
+        customer: "",
+        date: "",
+        collection: "",
+        transporter: ""
+    });
+    const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
+
+    useEffect(() => {
+        fetchTrucks();
+    }, []);
+
+    const fetchTrucks = async () => {
+        try {
+            setLoading(true);
+            const response = await fetch(`${API_BASE_URL}/operations/loading-board`);
+            if (!response.ok) throw new Error('Failed to fetch trucks');
+            const data = await response.json();
+            setTrucks(data.trucks || []);
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const getTrucksByStage = (stage: Stage) => {
+        return trucks.filter((truck: any) => {
+            const matchesStage = truck.stage === stage;
+            const matchesCustomer = filters.customer === "" || truck.customer.toLowerCase().includes(filters.customer.toLowerCase());
+            const matchesTransporter = filters.transporter === "" || truck.transporter.toLowerCase().includes(filters.transporter.toLowerCase());
+            const matchesCollection = filters.collection === "" || truck.collection.toLowerCase().includes(filters.collection.toLowerCase());
+
+            // Date filter: check if scheduledDate matches the selected date
+            const matchesDate = !filters.date || (truck.scheduledDate &&
+                new Date(truck.scheduledDate).toISOString().split('T')[0] === filters.date);
+
+            return matchesStage && matchesCustomer && matchesTransporter && matchesCollection && matchesDate;
+        });
+    };
+
+    const getBadgeColor = (badge: string) => {
+        if (badge === "invalid_plate") return "bg-red-100 text-red-700 border-red-200";
+        if (badge === "non_matched_anpr") return "bg-amber-100 text-amber-700 border-amber-200";
+        return "bg-slate-100 text-slate-700 border-slate-200";
+    };
+
+    const getBadgeLabel = (badge: string) => {
+        if (badge === "invalid_plate") return "Invalid Plate";
+        if (badge === "non_matched_anpr") return "Non-Matched ANPR";
+        return badge;
+    };
+
+    return (
+        <div className="space-y-6">
+            <VisitDetailSlideOver
+                truck={selectedTruck}
+                onClose={() => setSelectedTruck(null)}
+                onStageChange={fetchTrucks}
+            />
+
+            <Modal isOpen={isManualEntryOpen} onClose={() => setIsManualEntryOpen(false)} title="Manual Truck Entry">
+                <form className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium text-slate-700">Truck Plate</label>
+                            <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" placeholder="ABC 123 GP" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium text-slate-700">Transporter</label>
+                            <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" placeholder="Select Transporter" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium text-slate-700">Driver Name</label>
+                            <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium text-slate-700">ID / Passport</label>
+                            <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-sm font-medium text-slate-700">Product / Order</label>
+                        <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" placeholder="Search Order..." />
+                    </div>
+                    <div className="pt-4 flex justify-end gap-2">
+                        <button type="button" onClick={() => setIsManualEntryOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Cancel</button>
+                        <button type="button" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Create Entry</button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Detailed Stage View Modal */}
+            {expandedStage && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => setExpandedStage(null)} />
+                    <div className="relative w-full max-w-6xl h-[85vh] bg-white rounded-xl shadow-2xl p-6 mx-4 animate-in fade-in zoom-in-95 duration-200 flex flex-col gap-4">
+                        <div className="flex items-center justify-between flex-shrink-0">
+                            <div className="flex items-center gap-3">
+                                {(() => {
+                                    const stage = stages.find(s => s.id === expandedStage);
+                                    if (!stage) return null;
+                                    const Icon = stage.icon;
+                                    return (
+                                        <>
+                                            <div className={cn("p-2 rounded-lg", stage.bgColor)}>
+                                                <Icon className={cn("w-6 h-6", stage.color)} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-xl font-bold text-slate-900">{stage.title} - Detailed View</h3>
+                                                <p className="text-sm text-slate-500">Full list of trucks currently in this stage</p>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                            <button
+                                onClick={() => setExpandedStage(null)}
+                                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {/* Filters in Modal */}
+                        <div>
+                            <FilterBar filters={filters} setFilters={setFilters} trucks={trucks} />
+                        </div>
+
+                        <div className="flex-1 overflow-auto border border-slate-200 rounded-lg">
+                            <table className="w-full text-left bg-white">
+                                <thead className="bg-slate-50 sticky top-0 z-10">
+                                    <tr>
+                                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b">Plate</th>
+                                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b">Transporter</th>
+                                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b">Driver</th>
+                                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b">Product</th>
+                                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b">Customer</th>
+                                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b">Origin</th>
+                                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b">Order No</th>
+                                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b text-center">Badges</th>
+                                        <th className="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider border-b text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {getTrucksByStage(expandedStage).map((truck: any) => (
+                                        <tr key={truck.id} className="hover:bg-slate-50 transition-colors">
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-1 rounded">{truck.plate}</span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-700">{truck.transporter}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{truck.driver}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{truck.product}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{truck.customer}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{truck.collection}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{truck.orderNo}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                                                {truck.badges && truck.badges.length > 0 ? (
+                                                    <div className="flex justify-center gap-1">
+                                                        {truck.badges.map((badge: any, idx: any) => (
+                                                            <span key={idx} className={cn("w-2 h-2 rounded-full",
+                                                                badge === 'invalid_plate' ? "bg-red-500" :
+                                                                    badge === 'non_matched_anpr' ? "bg-amber-500" : "bg-slate-400"
+                                                            )} title={getBadgeLabel(badge)} />
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-slate-300">-</span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedTruck(truck);
+                                                        // Optional: Close expanded view or keep it open? detail slideover usually overlaps
+                                                    }}
+                                                    className="text-blue-600 hover:text-blue-800 text-sm font-bold"
+                                                >
+                                                    View
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {getTrucksByStage(expandedStage).length === 0 && (
+                                        <tr>
+                                            <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
+                                                No trucks found in this stage matching current filters.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Header Section */}
+            <div className="flex flex-col gap-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <div className="flex items-center gap-3 mb-2">
+                            <h1 className="text-3xl font-bold text-slate-900">Loading Board</h1>
+                            <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                                <span className="font-medium">Port View - Full Operations</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <button className="flex items-center px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 transition space-x-2 shadow-sm">
+                            <RefreshCw className="w-4 h-4" />
+                            <span>Refresh</span>
+                        </button>
+                        <button
+                            onClick={() => setIsManualEntryOpen(true)}
+                            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition space-x-2 shadow-lg shadow-blue-500/20"
+                        >
+                            <span>Manual Entry</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Filters Bar - Main View */}
+                <FilterBar filters={filters} setFilters={setFilters} trucks={trucks} />
+            </div>
+
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-sm">
+                    <div>
+                        <span className="text-xs font-medium text-slate-500">Total Trucks</span>
+                        <div className="text-lg font-bold text-slate-900">0 Today</div>
+                    </div>
+                    <Truck className="w-8 h-8 text-blue-100" />
+                </div>
+                <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-sm">
+                    <div>
+                        <span className="text-xs font-medium text-slate-500">Trucks/Hour</span>
+                        <div className="text-lg font-bold text-slate-900 text-emerald-600">0 This Hour</div>
+                    </div>
+                    <Clock className="w-8 h-8 text-emerald-100" />
+                </div>
+                <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-sm">
+                    <div>
+                        <span className="text-xs font-medium text-slate-500">Avg. Time in Park</span>
+                        <div className="text-lg font-bold text-slate-900 text-orange-600">56h 42m</div>
+                    </div>
+                    <TrendingUp className="w-8 h-8 text-orange-100" />
+                </div>
+            </div>
+
+            {/* Kanban Board */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-[calc(100vh-320px)]">
+                {stages.map((stage) => {
+                    const trucks = getTrucksByStage(stage.id);
+                    return (
+                        <div key={stage.id} className="flex flex-col h-full rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                            {/* Column Header */}
+                            <div
+                                onClick={() => setExpandedStage(stage.id)}
+                                className={cn(
+                                    "p-3 border-b flex items-center justify-between cursor-pointer hover:bg-opacity-80 transition-colors",
+                                    stage.id === "staging" ? "bg-amber-50/50 hover:bg-amber-100/50" :
+                                        stage.id === "pending_arrival" ? "bg-blue-50/50 hover:bg-blue-100/50" :
+                                            stage.id === "checked_in" ? "bg-emerald-50/50 hover:bg-emerald-100/50" : "bg-purple-50/50 hover:bg-purple-100/50"
+                                )}>
+                                <div className="flex items-center gap-2">
+                                    <stage.icon className={cn("w-4 h-4", stage.color)} />
+                                    <h3 className="font-bold text-slate-900 text-sm underlineDecoration-dotted underline-offset-4 decoration-slate-300 hover:underline">{stage.title}</h3>
+                                </div>
+                                <span className="bg-white px-2 py-0.5 rounded text-xs font-bold border border-slate-200 text-slate-600">
+                                    {trucks.length > 0 ? trucks.length : stage.count}
+                                </span>
+                            </div>
+
+                            {/* Cards Container */}
+                            <div className={cn(
+                                "flex-1 p-3 space-y-3 overflow-y-auto",
+                                stage.id === "staging" ? "bg-blue-50/30" :
+                                    stage.id === "pending_arrival" ? "bg-slate-50/50" :
+                                        stage.id === "checked_in" ? "bg-emerald-50/30" : "bg-purple-50/30"
+                            )}>
+                                {trucks.length === 0 ? (
+                                    <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-60">
+                                        <Truck className="w-10 h-10 mb-2 stroke-1" />
+                                        <p className="text-sm">No trucks in this stage</p>
+                                    </div>
+                                ) : (
+                                    trucks.map((truck: any) => (
+                                        <div
+                                            key={truck.id}
+                                            onClick={() => setSelectedTruck(truck)}
+                                            className="bg-white border border-slate-200 rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer group shadow-sm"
+                                        >
+                                            <div className="flex items-start justify-between mb-2">
+                                                <div className="bg-slate-100 text-slate-900 px-2 py-1 rounded font-mono font-bold text-xs">
+                                                    {truck.plate}
+                                                </div>
+                                                {truck.ocrStatus === "requested" && (
+                                                    <div className="w-2 h-2 rounded-full bg-blue-500" title="OCR Requested"></div>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-1 text-xs text-slate-500">
+                                                <div className="flex justify-between">
+                                                    <span>Transporter:</span>
+                                                    <span className="font-medium text-slate-700 truncate ml-2">{truck.transporter}</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span>Customer:</span>
+                                                    <span className="font-medium text-slate-700 truncate ml-2">{truck.customer}</span>
+                                                </div>
+                                                {truck.driver && (
+                                                    <div className="flex justify-between">
+                                                        <span>Driver:</span>
+                                                        <span className="font-medium text-slate-700 truncate ml-2">{truck.driver}</span>
+                                                    </div>
+                                                )}
+                                                {truck.product && (
+                                                    <div className="flex justify-between">
+                                                        <span>Product:</span>
+                                                        <span className="font-medium text-slate-700 truncate ml-2">{truck.product}</span>
+                                                    </div>
+                                                )}
+                                                {truck.ticketNo && (
+                                                    <div className="pt-2 mt-2 border-t border-slate-100">
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-[10px] text-slate-400 uppercase">Ticket</span>
+                                                            <span className="text-[10px] font-bold text-blue-600">{truck.ticketNo}</span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {truck.scheduledDate && (
+                                                    <div className={cn("flex items-center justify-between", truck.ticketNo ? "" : "pt-2 mt-2 border-t border-slate-100")}>
+                                                        <span className="text-[10px] text-slate-400 uppercase">Scheduled</span>
+                                                        <span className="text-[10px] font-medium text-slate-600">
+                                                            {new Date(truck.scheduledDate).toLocaleDateString('en-ZA', {
+                                                                day: '2-digit',
+                                                                month: 'short',
+                                                                year: 'numeric'
+                                                            })}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                <div className={cn("text-[10px] text-slate-400", truck.ticketNo || truck.scheduledDate ? "mt-1" : "pt-2 mt-2 border-t border-slate-50")}>
+                                                    Order: {truck.orderNo}
+                                                </div>
+                                            </div>
+
+                                            {/* Badges */}
+                                            {truck.badges && truck.badges.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mt-2">
+                                                    {truck.badges.map((badge: any, idx: number) => (
+                                                        <span key={idx} className={cn("px-1.5 py-0.5 rounded-[3px] text-[9px] font-bold uppercase border", getBadgeColor(badge))}>
+                                                            {getBadgeLabel(badge)}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}

@@ -1,0 +1,298 @@
+import { db } from '../db';
+import { truckAllocations } from '../db/schema';
+import { eq } from 'drizzle-orm';
+
+interface ANPRPlateDetection {
+  id: number;
+  plateNumber: string;
+  detectedAt: string;
+  cameraType: string;
+  direction: 'entry' | 'exit';
+}
+
+interface ANPRApiResponse {
+  success: boolean;
+  count: number;
+  data: ANPRPlateDetection[];
+}
+
+class ANPRCheckerService {
+  private pollingInterval: NodeJS.Timeout | null = null;
+  private processedPlateIds: Set<number> = new Set();
+  private lastCheckedId: number = 0;
+  private isRunning: boolean = false;
+  private mockMode: boolean = false;
+
+  private ANPR_API_URL: string = process.env.ANPR_API_URL || 'http://localhost:3001/api/anpr-mock/last-50';
+  private POLLING_INTERVAL_MS: number = parseInt(process.env.ANPR_POLLING_INTERVAL_MS || '30000');
+
+  /**
+   * Start the ANPR polling service
+   */
+  async start(mockMode: boolean = true) {
+    if (this.isRunning) {
+      console.log('⚠️  ANPR checker is already running');
+      return;
+    }
+
+    this.mockMode = mockMode;
+    console.log('\n🚀 Starting ANPR plate checker service...');
+    console.log(`   Mode: ${mockMode ? '🧪 MOCK (Testing)' : '🔴 LIVE (Production)'}`);
+    console.log(`   API URL: ${this.ANPR_API_URL}`);
+    console.log(`   Polling interval: ${this.POLLING_INTERVAL_MS / 1000} seconds`);
+
+    this.isRunning = true;
+
+    // Start polling
+    this.pollingInterval = setInterval(() => {
+      this.checkPlates().catch(error => {
+        console.error('❌ Error in ANPR polling:', error.message);
+      });
+    }, this.POLLING_INTERVAL_MS);
+
+    console.log('✅ ANPR checker started successfully\n');
+  }
+
+  /**
+   * Stop the ANPR polling service
+   */
+  stop() {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+      this.isRunning = false;
+      console.log('🛑 ANPR checker stopped');
+    }
+  }
+
+  /**
+   * Main function to check ANPR plates and match with allocations
+   */
+  private async checkPlates(): Promise<void> {
+    try {
+      // Fetch latest plate detections from ANPR API
+      const detections = await this.fetchANPRPlates();
+
+      if (!detections || detections.length === 0) {
+        return;
+      }
+
+      console.log(`📷 Fetched ${detections.length} plate detections from ANPR API`);
+
+      // Filter out already processed detections
+      const newDetections = detections.filter(
+        detection => !this.processedPlateIds.has(detection.id) && detection.id > this.lastCheckedId
+      );
+
+      if (newDetections.length === 0) {
+        return;
+      }
+
+      console.log(`🆕 Processing ${newDetections.length} new plate detections`);
+
+      let processedCount = 0;
+      for (const detection of newDetections) {
+        const wasProcessed = await this.processPlateDetection(detection);
+        if (wasProcessed) {
+          processedCount++;
+        }
+
+        // Mark as processed
+        this.processedPlateIds.add(detection.id);
+        if (detection.id > this.lastCheckedId) {
+          this.lastCheckedId = detection.id;
+        }
+      }
+
+      // Cleanup old processed IDs (keep only last 1000)
+      if (this.processedPlateIds.size > 1000) {
+        const sortedIds = Array.from(this.processedPlateIds).sort((a, b) => b - a);
+        this.processedPlateIds = new Set(sortedIds.slice(0, 1000));
+      }
+
+      if (processedCount > 0) {
+        console.log(`✅ ANPR check complete: ${processedCount} vehicles processed automatically\n`);
+      }
+
+    } catch (error: any) {
+      console.error('❌ Error in ANPR plate checking:', error.message);
+    }
+  }
+
+  /**
+   * Fetch plate detections from the ANPR API
+   */
+  private async fetchANPRPlates(): Promise<ANPRPlateDetection[]> {
+    try {
+      const response = await fetch(this.ANPR_API_URL, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+
+      if (!response.ok) {
+        throw new Error(`ANPR API returned status ${response.status}`);
+      }
+
+      const data = await response.json() as ANPRApiResponse;
+
+      if (!data.success || !Array.isArray(data.data)) {
+        console.log('⚠️  ANPR API response indicates failure or invalid data format');
+        return [];
+      }
+
+      return data.data;
+
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        console.error('⏱️  ANPR API request timed out');
+      } else if (error?.code === 'ECONNREFUSED') {
+        // Silent fail for connection refused (API not running)
+      } else {
+        console.error(`❌ Failed to fetch ANPR plates: ${error?.message || 'Unknown error'}`);
+      }
+      return [];
+    }
+  }
+
+  /**
+   * Process a single plate detection
+   * Returns true if a vehicle was processed (checked in or departed)
+   */
+  private async processPlateDetection(detection: ANPRPlateDetection): Promise<boolean> {
+    try {
+      const plateNumber = this.normalizePlateNumber(detection.plateNumber);
+      const tenantId = '1'; // Default tenant
+
+      console.log(`🔍 Checking plate ${detection.plateNumber} (normalized: ${plateNumber})`);
+      console.log(`   Direction: ${detection.direction}, Camera: ${detection.cameraType}`);
+
+      // Find matching truck allocation
+      const allocations = await db
+        .select()
+        .from(truckAllocations)
+        .where(eq(truckAllocations.tenantId, tenantId));
+
+      const matchedAllocation = allocations.find(a =>
+        this.normalizePlateNumber(a.vehicleReg) === plateNumber &&
+        (a.status === 'scheduled' || a.status === 'arrived')
+      );
+
+      if (matchedAllocation) {
+        console.log(`✅ MATCH FOUND! Allocation ID: ${matchedAllocation.id}, Order: ${matchedAllocation.orderId}`);
+
+        // Determine target status based on detection direction and current status
+        let targetStatus: string;
+
+        if (detection.direction === 'entry') {
+          // Entry detection: scheduled → arrived
+          if (matchedAllocation.status === 'scheduled') {
+            targetStatus = 'arrived';
+          } else {
+            console.log(`   Already checked in, skipping`);
+            return false;
+          }
+        } else {
+          // Exit detection: arrived → completed
+          if (matchedAllocation.status === 'arrived' || matchedAllocation.status === 'weighing') {
+            targetStatus = 'completed';
+          } else {
+            console.log(`   Not in correct status for departure, skipping`);
+            return false;
+          }
+        }
+
+        // Update allocation status
+        const updateData: any = {
+          status: targetStatus,
+          updatedAt: new Date(),
+        };
+
+        if (targetStatus === 'arrived') {
+          updateData.actualArrival = new Date(detection.detectedAt);
+        }
+
+        if (targetStatus === 'completed') {
+          updateData.departureTime = new Date(detection.detectedAt);
+        }
+
+        await db
+          .update(truckAllocations)
+          .set(updateData)
+          .where(eq(truckAllocations.id, matchedAllocation.id));
+
+        console.log(`🚚 Vehicle ${matchedAllocation.vehicleReg} (ID: ${matchedAllocation.id}) → ${targetStatus}`);
+        console.log(`   ${detection.direction === 'entry' ? 'CHECK-IN' : 'DEPARTURE'} via ANPR at ${detection.detectedAt}`);
+
+        return true;
+      } else {
+        console.log(`⚠️  No match found for plate ${plateNumber}`);
+        console.log(`   Checked against ${allocations.length} allocations`);
+        return false;
+      }
+
+    } catch (error: any) {
+      console.error(`❌ Error processing plate detection ${detection.id}:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Normalize plate numbers for consistent matching
+   * Removes spaces, dashes, underscores and converts to uppercase
+   */
+  private normalizePlateNumber(plateNumber: string): string {
+    return plateNumber
+      .toUpperCase()
+      .replace(/[\s\-_]/g, '') // Remove spaces, dashes, underscores
+      .trim();
+  }
+
+  /**
+   * Get service status
+   */
+  getStatus() {
+    return {
+      isRunning: this.isRunning,
+      mockMode: this.mockMode,
+      apiUrl: this.ANPR_API_URL,
+      pollingIntervalSeconds: this.POLLING_INTERVAL_MS / 1000,
+      processedPlatesCount: this.processedPlateIds.size,
+      lastCheckedId: this.lastCheckedId,
+      workflow: {
+        onEntry: 'Match plate → scheduled → arrived (auto check-in)',
+        onExit: 'Match plate → arrived → completed (auto departure)',
+      }
+    };
+  }
+
+  /**
+   * Reset the processed plates cache (useful for testing)
+   */
+  resetCache() {
+    this.processedPlateIds.clear();
+    this.lastCheckedId = 0;
+    console.log('🔄 ANPR checker cache reset');
+  }
+
+  /**
+   * Manually inject a test plate detection (for testing)
+   */
+  async injectTestPlate(plateNumber: string, direction: 'entry' | 'exit' = 'entry'): Promise<boolean> {
+    console.log(`\n🧪 TEST INJECTION: ${plateNumber} (${direction})`);
+
+    const testDetection: ANPRPlateDetection = {
+      id: Date.now(),
+      plateNumber,
+      detectedAt: new Date().toISOString(),
+      cameraType: 'test_camera',
+      direction
+    };
+
+    return await this.processPlateDetection(testDetection);
+  }
+}
+
+export const anprCheckerService = new ANPRCheckerService();
