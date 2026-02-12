@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: routewise-postgres-prod
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-routewise_secure_pass_2025}
+      POSTGRES_DB: routewise_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis for caching and pub/sub
+  redis:
+    image: redis:7-alpine
+    container_name: routewise-redis-prod
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./routewise-backend
+      dockerfile: Dockerfile
+    image: routewise-backend:latest
+    container_name: routewise-backend-prod
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-routewise_secure_pass_2025}
+      DB_NAME: routewise_db
+      JWT_SECRET: ${JWT_SECRET:-prod_secret_key_change_this}
+      JWT_EXPIRES_IN: 24h
+      CORS_ORIGIN: https://lionpark-routewise.devmindrift.net,https://bulkconnections-routewise.devmindrift.net,https://routewise-orders.devmindrift.net,http://13.60.185.230:8081,http://13.60.185.230:8082,http://13.60.185.230:8083
+    ports:
+      - "8080:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Frontend 1: Mindrift Lionspark Weigh8 (Next.js)
+  mindrift-lionspark:
+    build:
+      context: ./mindrift-Lionspark-weigh8
+      dockerfile: Dockerfile
+    image: mindrift-lionspark:latest
+    container_name: mindrift-lionspark-prod
+    environment:
+      - NEXT_PUBLIC_API_URL=http://13.60.185.230:8080/api
+      - NODE_ENV=production
+      - PORT=3000
+    ports:
+      - "8081:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Frontend 2: Weigh8 Bulk Connections (Next.js)
+  weigh8-bulkconnections:
+    build:
+      context: ./weigh8-bulkconnections
+      dockerfile: Dockerfile
+    image: weigh8-bulkconnections:latest
+    container_name: weigh8-bulkconnections-prod
+    environment:
+      - NEXT_PUBLIC_API_URL=http://13.60.185.230:8080/api
+      - NODE_ENV=production
+      - PORT=3000
+    ports:
+      - "8082:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Frontend 3: Mindrift Orders (Vite + React)
+  mindrift-orders:
+    build:
+      context: ./Mindrift-Orders
+      dockerfile: Dockerfile
+    image: mindrift-orders:latest
+    container_name: mindrift-orders-prod
+    ports:
+      - "8083:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

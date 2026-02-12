@@ -1,0 +1,31 @@
+{
+  "git.autoRepositoryDetection": "subFolders",
+  "git.detectSubmodules": false,
+  "git.scanRepositories": [
+    "."
+  ],
+  "git.ignoredRepositories": [
+    "mindrift-Lionspark-weigh8",
+    "weigh8-bulkconnections",
+    "Mindrift-Orders",
+    "weigh8-rebase-working",
+    "weigh8-backend"
+  ],
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/build": true,
+    "postgres_data": true,
+    "redis_data": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/package-lock.json": true,
+    "postgres_data": true,
+    "redis_data": true
+  }
+}

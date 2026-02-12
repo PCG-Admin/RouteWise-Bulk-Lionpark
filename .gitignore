@@ -2,6 +2,11 @@
 # Weigh8 Platform - Monorepo
 # ===================================
 
+# Inactive/Reference Projects (Not part of monorepo)
+Mindrift-Orders/
+weigh8-rebase-working/
+weigh8-backend/
+
 # Dependencies
 **/node_modules/
 .pnp
@@ -42,7 +47,8 @@ Thumbs.db
 Desktop.ini
 
 # IDEs
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
 *.suo
 *.ntvs
@@ -79,3 +85,33 @@ routewise-backend/uploads/
 .eslintcache
 .yarn-integrity
 .parcel-cache
+
+# Temporary Documentation (project planning/notes)
+*_GUIDE.md
+*_STATUS.md
+*_SUMMARY.md
+*_PLAN.md
+*_CONTEXT.md
+COMPLETE_*.md
+COMPLETION_*.md
+DEPLOYMENT-STATUS.md
+FINAL_*.md
+IMPLEMENTATION_*.md
+MOCK_*.md
+PARKING_*.md
+REMAINING_*.md
+SYSTEM_*.md
+README-ROUTEWISE.md
+
+# Data Files (Excel, PDFs, etc.)
+*.xlsx
+*.xls
+*.pdf
+*.csv
+*.zip
+*.tar.gz
+*.tgz
+
+# Deployment packages
+deployment-package/
+deployment-package.*
