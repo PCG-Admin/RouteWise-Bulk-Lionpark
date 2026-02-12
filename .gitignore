@@ -59,6 +59,9 @@ Desktop.ini
 *.swo
 *~
 
+# Claude Code settings (optional - team can decide)
+.claude/
+
 # Docker (Volumes & Data)
 postgres_data/
 redis_data/
@@ -115,3 +118,8 @@ README-ROUTEWISE.md
 # Deployment packages
 deployment-package/
 deployment-package.*
+
+# Development/Debug Scripts (not for production)
+**/find-password.ts
+**/test-*.js
+**/debug-*.ts
