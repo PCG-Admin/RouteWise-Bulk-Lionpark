@@ -29,11 +29,13 @@ interface Allocation {
 
 export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModalProps) {
   const [plateNumber, setPlateNumber] = useState('');
+  const [gateType, setGateType] = useState<'entrance' | 'exit'>('entrance');
   const [isSearching, setIsSearching] = useState(false);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [allocation, setAllocation] = useState<Allocation | null>(null);
   const [searchPerformed, setSearchPerformed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const handleSearch = async () => {
     if (!plateNumber.trim()) {
@@ -45,6 +47,7 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
       setIsSearching(true);
       setError(null);
       setSearchPerformed(false);
+      setStatusMessage(null);
 
       // Remove all spaces from plate number for searching
       const cleanedPlateNumber = plateNumber.replace(/\s+/g, '').trim();
@@ -62,6 +65,33 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
 
         if (foundAllocation) {
           setAllocation(foundAllocation);
+
+          // Set status message based on gate type and allocation status
+          if (gateType === 'exit') {
+            // Exit gate logic - check driver validation status
+            const driverValidationStatus = (foundAllocation as any).driverValidationStatus;
+
+            // Check if already departed
+            if (foundAllocation.status === 'completed') {
+              setStatusMessage('⚠️ This truck has already departed');
+            } else if (driverValidationStatus === 'ready_for_dispatch') {
+              setStatusMessage(null); // Ready to depart
+            } else if (foundAllocation.status === 'arrived' || foundAllocation.status === 'weighing') {
+              // Check driver validation status to determine message
+              if (driverValidationStatus === 'verified') {
+                setStatusMessage('⚠️ Pending Permit Board - Driver is verified but permit has not been issued yet');
+              } else {
+                setStatusMessage('⚠️ This driver is still pending verification');
+              }
+            } else {
+              setStatusMessage('⚠️ This truck is not ready for dispatch');
+            }
+          } else {
+            // Entrance gate logic (existing behavior)
+            if (foundAllocation.status === 'arrived' || foundAllocation.status === 'weighing' || foundAllocation.status === 'completed') {
+              setStatusMessage('⚠️ This truck has already been checked in');
+            }
+          }
         } else {
           setAllocation(null);
         }
@@ -85,6 +115,10 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
       setIsCheckingIn(true);
       setError(null);
 
+      // Determine target status based on gate type
+      const targetStatus = gateType === 'entrance' ? 'arrived' : 'completed';
+      const action = gateType === 'entrance' ? 'check in' : 'check out';
+
       const response = await fetch(
         `http://localhost:3001/api/truck-allocations/${allocation.id}/status`,
         {
@@ -93,7 +127,7 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            status: 'arrived',
+            status: targetStatus,
           }),
         }
       );
@@ -104,11 +138,11 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
         onSuccess();
         onClose();
       } else {
-        setError(result.error || 'Failed to check in truck');
+        setError(result.error || `Failed to ${action} truck`);
       }
     } catch (err) {
-      console.error('Check-in error:', err);
-      setError('Network error occurred during check-in');
+      console.error(`${gateType} error:`, err);
+      setError(`Network error occurred during ${gateType === 'entrance' ? 'check-in' : 'check-out'}`);
     } finally {
       setIsCheckingIn(false);
     }
@@ -127,11 +161,16 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-              <Search className="w-7 h-7 text-blue-600" />
-              Manual Entry - Plate Lookup
+              <Search className={cn(
+                "w-7 h-7",
+                gateType === 'entrance' ? 'text-green-600' : 'text-purple-600'
+              )} />
+              Manual {gateType === 'entrance' ? 'Check-In' : 'Check-Out'} - Plate Lookup
             </h2>
             <p className="text-sm text-slate-600 mt-1">
-              Enter plate number to find and check in truck
+              {gateType === 'entrance'
+                ? 'Enter plate number to find and check in truck at entrance gate'
+                : 'Enter plate number to find and check out truck at exit gate'}
             </p>
           </div>
           <button
@@ -144,6 +183,49 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
 
         {/* Content */}
         <div className="p-6 space-y-6">
+          {/* Gate Type Selector */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Gate Type
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  setGateType('entrance');
+                  setSearchPerformed(false);
+                  setAllocation(null);
+                  setError(null);
+                  setStatusMessage(null);
+                }}
+                className={cn(
+                  'px-4 py-3 rounded-lg font-semibold transition border-2',
+                  gateType === 'entrance'
+                    ? 'bg-green-600 text-white border-green-600'
+                    : 'bg-white text-slate-700 border-slate-300 hover:border-green-400'
+                )}
+              >
+                🚪 Entrance Gate
+              </button>
+              <button
+                onClick={() => {
+                  setGateType('exit');
+                  setSearchPerformed(false);
+                  setAllocation(null);
+                  setError(null);
+                  setStatusMessage(null);
+                }}
+                className={cn(
+                  'px-4 py-3 rounded-lg font-semibold transition border-2',
+                  gateType === 'exit'
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-white text-slate-700 border-slate-300 hover:border-purple-400'
+                )}
+              >
+                🚪 Exit Gate
+              </button>
+            </div>
+          </div>
+
           {/* Search Input */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -289,14 +371,15 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
                       allocation.status === 'in_transit' && 'bg-amber-50 text-amber-700 border-amber-200',
                       allocation.status === 'arrived' && 'bg-green-50 text-green-700 border-green-200',
                       allocation.status === 'weighing' && 'bg-purple-50 text-purple-700 border-purple-200',
+                      allocation.status === 'ready_for_dispatch' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
                       allocation.status === 'completed' && 'bg-slate-50 text-slate-700 border-slate-200'
                     )}>
-                      {allocation.status.toUpperCase()}
+                      {allocation.status === 'ready_for_dispatch' ? 'READY FOR DISPATCH' : allocation.status.toUpperCase()}
                     </span>
 
-                    {['arrived', 'weighing', 'completed'].includes(allocation.status) && (
+                    {statusMessage && (
                       <p className="text-xs text-amber-600 mt-2 font-medium">
-                        ⚠️ This truck has already been checked in
+                        {statusMessage}
                       </p>
                     )}
                   </div>
@@ -353,24 +436,50 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
             Cancel
           </button>
 
-          {allocation && !['arrived', 'weighing', 'completed'].includes(allocation.status) && (
-            <button
-              onClick={handleConfirmCheckIn}
-              disabled={isCheckingIn}
-              className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isCheckingIn ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Checking In...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-5 h-5" />
-                  Confirm Check In
-                </>
+          {allocation && (
+            <>
+              {/* Entrance Gate: Show button if not already checked in */}
+              {gateType === 'entrance' && !['arrived', 'weighing', 'completed'].includes(allocation.status) && (
+                <button
+                  onClick={handleConfirmCheckIn}
+                  disabled={isCheckingIn}
+                  className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isCheckingIn ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Checking In...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-5 h-5" />
+                      Confirm Check In
+                    </>
+                  )}
+                </button>
               )}
-            </button>
+
+              {/* Exit Gate: Show button only if driverValidationStatus is ready_for_dispatch and not already completed */}
+              {gateType === 'exit' && (allocation as any).driverValidationStatus === 'ready_for_dispatch' && allocation.status !== 'completed' && (
+                <button
+                  onClick={handleConfirmCheckIn}
+                  disabled={isCheckingIn}
+                  className="px-6 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isCheckingIn ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Checking Out...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-5 h-5" />
+                      Confirm Departure
+                    </>
+                  )}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

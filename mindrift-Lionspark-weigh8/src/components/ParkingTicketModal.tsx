@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, FileText, Truck, Clock, User, Package, MapPin, Building, CheckCircle, Loader2, Upload, Camera } from 'lucide-react';
+import { X, FileText, Truck, Clock, User, Package, MapPin, Building, CheckCircle, Loader2, Upload, Camera, Plus } from 'lucide-react';
 import TransporterSelect from './TransporterSelect';
 import { createWorker } from 'tesseract.js';
 
@@ -38,6 +38,30 @@ interface ParkingTicket {
   driverContactNumber: string;
 }
 
+interface FreightCompany {
+  id: number;
+  name: string;
+  address: string;
+}
+
+interface Client {
+  id: number;
+  name: string;
+  code: string;
+  phone: string;
+  address: string;
+}
+
+interface Driver {
+  id: number;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  idNumber: string;
+  licenseNumber: string;
+  transporterId: number;
+}
+
 export default function ParkingTicketModal({ allocationId, onClose, onSuccess }: ParkingTicketModalProps) {
   const [ticket, setTicket] = useState<ParkingTicket | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,6 +71,18 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Master data
+  const [freightCompanies, setFreightCompanies] = useState<FreightCompany[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [selectedTransporterId, setSelectedTransporterId] = useState<number | null>(null);
+  const [allocation, setAllocation] = useState<any>(null);
+
+  // Quick add modals
+  const [showQuickAdd, setShowQuickAdd] = useState<{
+    type: 'freight' | 'client' | 'transporter' | 'driver' | null;
+  }>({ type: null });
 
   // Form state
   const [formData, setFormData] = useState({
@@ -71,19 +107,63 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
 
   useEffect(() => {
     fetchParkingTicket();
+    fetchMasterData();
   }, [allocationId]);
+
+  const fetchMasterData = async () => {
+    try {
+      // Fetch freight companies
+      const freightCompaniesRes = await fetch('http://localhost:3001/api/freight-companies?siteId=1');
+      const freightCompaniesData = await freightCompaniesRes.json();
+      if (freightCompaniesData.success) {
+        setFreightCompanies(freightCompaniesData.data);
+      }
+
+      // Fetch clients (freight customers)
+      const clientsRes = await fetch('http://localhost:3001/api/clients?siteId=1');
+      const clientsData = await clientsRes.json();
+      if (clientsData.success) {
+        setClients(clientsData.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch master data:', err);
+    }
+  };
+
+  const fetchDrivers = async (transporterId: number) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/drivers?transporterId=${transporterId}`);
+      const result = await response.json();
+      if (result.success) {
+        setDrivers(result.data);
+      } else {
+        setDrivers([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch drivers:', err);
+      setDrivers([]);
+    }
+  };
 
   const fetchParkingTicket = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
+      // Fetch allocation data first to pre-populate
+      const allocationRes = await fetch(`http://localhost:3001/api/truck-allocations/${allocationId}`);
+      const allocationData = await allocationRes.json();
+
+      if (allocationData.success && allocationData.data) {
+        setAllocation(allocationData.data);
+      }
+
       const response = await fetch(`http://localhost:3001/api/parking-tickets/allocation/${allocationId}`);
       const result = await response.json();
 
       if (result.success && result.data) {
         setTicket(result.data);
-        // Populate form with existing data
+        // Populate form with existing ticket data
         setFormData({
           personOnDuty: result.data.personOnDuty || '',
           terminalNumber: result.data.terminalNumber || '1',
@@ -103,6 +183,15 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
           driverIdNumber: result.data.driverIdNumber || '',
           driverContactNumber: result.data.driverContactNumber || '',
         });
+      } else if (allocationData.success && allocationData.data) {
+        // No existing ticket, pre-populate from allocation
+        const alloc = allocationData.data;
+        setFormData(prev => ({
+          ...prev,
+          transporterName: alloc.transporter || '',
+          driverName: alloc.driverName || '',
+          customerName: alloc.clientName || '',
+        }));
       } else {
         setError('Parking ticket not found for this allocation');
       }
@@ -121,28 +210,42 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
       setIsSaving(true);
       setError(null);
 
+      const requestData = {
+        ...formData,
+        processedBy: formData.personOnDuty || 'System',
+      };
+
+      console.log('🚀 Submitting parking ticket update:', {
+        ticketId: ticket.id,
+        ticketNumber: ticket.ticketNumber,
+        data: requestData,
+      });
+
       // Update parking ticket
       const updateResponse = await fetch(`http://localhost:3001/api/parking-tickets/${ticket.id}/process`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...formData,
-          processedBy: formData.personOnDuty || 'System',
-        }),
+        body: JSON.stringify(requestData),
       });
+
+      console.log('📡 Response status:', updateResponse.status);
 
       const updateResult = await updateResponse.json();
 
+      console.log('📦 Response data:', updateResult);
+
       if (updateResult.success) {
+        console.log('✅ Parking ticket updated successfully');
         onSuccess();
         onClose();
       } else {
+        console.error('❌ Update failed:', updateResult.error);
         setError(updateResult.error || 'Failed to process parking ticket');
       }
     } catch (err) {
-      console.error('Failed to process parking ticket:', err);
+      console.error('❌ Failed to process parking ticket:', err);
       setError('Network error occurred');
     } finally {
       setIsSaving(false);
@@ -153,13 +256,146 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleTransporterChange = (name: string, phone: string | null, code: string | null) => {
+  const handleTransporterChange = (name: string, phone: string | null, code: string | null, id?: number) => {
     setFormData((prev) => ({
       ...prev,
       transporterName: name,
       transporterPhone: phone || '',
       transporterNumber: code || '',
     }));
+
+    // Fetch drivers for this transporter
+    if (id) {
+      setSelectedTransporterId(id);
+      fetchDrivers(id);
+    } else {
+      setSelectedTransporterId(null);
+      setDrivers([]);
+    }
+  };
+
+  const handleDriverChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const driverId = parseInt(e.target.value);
+    const driver = drivers.find(d => d.id === driverId);
+    if (driver) {
+      setFormData((prev) => ({
+        ...prev,
+        driverName: `${driver.firstName} ${driver.lastName}`,
+        driverIdNumber: driver.idNumber || '',
+        driverContactNumber: driver.phone || '',
+        driverPermitNumber: driver.licenseNumber || prev.driverPermitNumber,
+      }));
+    }
+  };
+
+  const handleFreightCompanyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const companyId = parseInt(e.target.value);
+    const company = freightCompanies.find(c => c.id === companyId);
+    if (company) {
+      setFormData((prev) => ({
+        ...prev,
+        freightCompanyName: company.name,
+        deliveryAddress: company.address || prev.deliveryAddress,
+      }));
+    }
+  };
+
+  const handleClientChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const clientId = parseInt(e.target.value);
+    const client = clients.find(c => c.id === clientId);
+    if (client) {
+      setFormData((prev) => ({
+        ...prev,
+        customerName: client.name,
+        customerNumber: client.code || '',
+        customerPhone: client.phone || '',
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        customerName: '',
+        customerNumber: '',
+        customerPhone: '',
+      }));
+    }
+  };
+
+  // Quick add handlers
+  const handleQuickAddFreight = async (data: any) => {
+    try {
+      const response = await fetch('http://localhost:3001/api/freight-companies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, siteId: 1 }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        await fetchMasterData();
+        setFormData(prev => ({ ...prev, freightCompanyName: data.name, deliveryAddress: data.address || '' }));
+        setShowQuickAdd({ type: null });
+      }
+    } catch (err) {
+      console.error('Failed to add freight company:', err);
+    }
+  };
+
+  const handleQuickAddClient = async (data: any) => {
+    try {
+      const response = await fetch('http://localhost:3001/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, siteId: 1 }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        await fetchMasterData();
+        setFormData(prev => ({ ...prev, customerName: data.name, customerNumber: data.code || '', customerPhone: data.phone || '' }));
+        setShowQuickAdd({ type: null });
+      }
+    } catch (err) {
+      console.error('Failed to add client:', err);
+    }
+  };
+
+  const handleQuickAddTransporter = async (data: any) => {
+    try {
+      const response = await fetch('http://localhost:3001/api/transporters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, siteId: 1 }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        setFormData(prev => ({ ...prev, transporterName: data.name, transporterNumber: data.code || '', transporterPhone: data.phone || '' }));
+        if (result.data?.id) {
+          setSelectedTransporterId(result.data.id);
+          fetchDrivers(result.data.id);
+        }
+        setShowQuickAdd({ type: null });
+      }
+    } catch (err) {
+      console.error('Failed to add transporter:', err);
+    }
+  };
+
+  const handleQuickAddDriver = async (data: any) => {
+    try {
+      const response = await fetch('http://localhost:3001/api/drivers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, transporterId: selectedTransporterId }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        if (selectedTransporterId) {
+          await fetchDrivers(selectedTransporterId);
+        }
+        setFormData(prev => ({ ...prev, driverName: `${data.firstName} ${data.lastName}`, driverIdNumber: data.idNumber || '', driverContactNumber: data.phone || '' }));
+        setShowQuickAdd({ type: null });
+      }
+    } catch (err) {
+      console.error('Failed to add driver:', err);
+    }
   };
 
   // OCR Processing Function
@@ -472,29 +708,43 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
 
           {/* Freight Company */}
           <div className="bg-purple-50 border border-purple-200 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-purple-900 mb-4 flex items-center gap-2">
-              <Building className="w-4 h-4" />
-              Freight Company
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-purple-900 flex items-center gap-2">
+                <Building className="w-4 h-4" />
+                Freight Company
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowQuickAdd({ type: 'freight' })}
+                className="px-3 py-1 bg-purple-600 text-white text-xs font-semibold rounded-lg hover:bg-purple-700 transition flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                Add New
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-purple-800 mb-1">Company Name</label>
+                <label className="block text-xs text-purple-800 mb-1">Company Name *</label>
                 <select
-                  value={formData.freightCompanyName}
-                  onChange={(e) => handleInputChange('freightCompanyName', e.target.value)}
+                  value={freightCompanies.find(c => c.name === formData.freightCompanyName)?.id || ''}
+                  onChange={handleFreightCompanyChange}
                   className="w-full px-3 py-2 bg-white border border-purple-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 >
-                  <option value="Bulk Connections">Bulk Connections</option>
-                  <option value="Bidvest Port Operations">Bidvest Port Operations</option>
+                  <option value="">Select freight company...</option>
+                  {freightCompanies.map((company) => (
+                    <option key={company.id} value={company.id}>
+                      {company.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-purple-800 mb-1">Delivery Address</label>
+                <label className="block text-xs text-purple-800 mb-1">Delivery Address (Auto-populated)</label>
                 <input
                   type="text"
                   value={formData.deliveryAddress}
                   onChange={(e) => handleInputChange('deliveryAddress', e.target.value)}
-                  placeholder="Enter delivery address..."
+                  placeholder="Will auto-populate from company..."
                   className="w-full px-3 py-2 bg-white border border-purple-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 />
               </div>
@@ -503,36 +753,66 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
 
           {/* Freight Customer/Exporter */}
           <div className="bg-green-50 border border-green-200 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-green-900 mb-4 flex items-center gap-2">
-              <User className="w-4 h-4" />
-              Freight Customer / Exporter
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-green-900 flex items-center gap-2">
+                <User className="w-4 h-4" />
+                Freight Customer / Exporter (Trader)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowQuickAdd({ type: 'client' })}
+                className="px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                Add New
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+              <div className="md:col-span-2">
+                <label className="block text-xs text-green-800 mb-1">Select Customer/Trader *</label>
+                <select
+                  value={clients.find(c => c.name === formData.customerName)?.id || ''}
+                  onChange={handleClientChange}
+                  className="w-full px-3 py-2 bg-white border border-green-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                >
+                  <option value="">Select customer/trader...</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name} {client.code ? `(${client.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-green-700 mt-1">
+                  Selecting a customer will auto-populate code and phone number
+                </p>
+              </div>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs text-green-800 mb-1">Customer Number</label>
+                <label className="block text-xs text-green-800 mb-1">Customer Code (Auto-populated)</label>
                 <input
                   type="text"
                   value={formData.customerNumber}
                   readOnly
-                  className="w-full px-3 py-2 bg-white border border-green-300 rounded-lg text-sm text-slate-900"
+                  className="w-full px-3 py-2 bg-slate-100 border border-green-300 rounded-lg text-sm text-slate-700 cursor-not-allowed"
                 />
               </div>
               <div>
-                <label className="block text-xs text-green-800 mb-1">Customer Name</label>
+                <label className="block text-xs text-green-800 mb-1">Customer Name (Auto-populated)</label>
                 <input
                   type="text"
                   value={formData.customerName}
                   readOnly
-                  className="w-full px-3 py-2 bg-white border border-green-300 rounded-lg text-sm text-slate-900"
+                  className="w-full px-3 py-2 bg-slate-100 border border-green-300 rounded-lg text-sm text-slate-700 cursor-not-allowed font-medium"
                 />
               </div>
               <div>
-                <label className="block text-xs text-green-800 mb-1">Telephone Number</label>
+                <label className="block text-xs text-green-800 mb-1">Telephone (Auto-populated)</label>
                 <input
                   type="text"
                   value={formData.customerPhone}
                   onChange={(e) => handleInputChange('customerPhone', e.target.value)}
-                  placeholder="Enter phone..."
+                  placeholder="Will auto-populate..."
                   className="w-full px-3 py-2 bg-white border border-green-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 />
               </div>
@@ -541,10 +821,20 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
 
           {/* Transporter */}
           <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-indigo-900 mb-4 flex items-center gap-2">
-              <Truck className="w-4 h-4" />
-              Transporter
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-indigo-900 flex items-center gap-2">
+                <Truck className="w-4 h-4" />
+                Transporter
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowQuickAdd({ type: 'transporter' })}
+                className="px-3 py-1 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                Add New
+              </button>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-xs text-indigo-800 mb-1">Transporter Name *</label>
@@ -640,34 +930,81 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
                 </p>
               </div>
 
+              {/* Driver Selection Dropdown */}
+              {selectedTransporterId && (
+                <div className="mb-4 bg-indigo-100 border border-indigo-300 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-indigo-900">
+                      Select Driver (from {formData.transporterName})
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickAdd({ type: 'driver' })}
+                      className="px-2 py-1 bg-indigo-700 text-white text-xs font-semibold rounded hover:bg-indigo-800 transition flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add Driver
+                    </button>
+                  </div>
+                  {drivers.length > 0 ? (
+                    <>
+                      <select
+                        onChange={handleDriverChange}
+                        className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      >
+                        <option value="">Select a driver to auto-populate...</option>
+                        {drivers.map((driver) => (
+                          <option key={driver.id} value={driver.id}>
+                            {driver.firstName} {driver.lastName} {driver.idNumber ? `(ID: ${driver.idNumber})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-indigo-700 mt-1">
+                        ✓ Selecting a driver will auto-populate name, ID, and contact below (can still edit manually)
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-indigo-600 mt-1">
+                      No drivers found for this transporter. Click "Add Driver" to add one.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs text-indigo-800 mb-1">Driver Name</label>
+                  <label className="block text-xs text-indigo-800 mb-1">
+                    Driver Name {selectedTransporterId && drivers.length > 0 && '(Auto-populated)'}
+                  </label>
                   <input
                     type="text"
                     value={formData.driverName}
                     onChange={(e) => handleInputChange('driverName', e.target.value)}
-                    placeholder="Enter driver name..."
+                    placeholder="Enter driver name or select above..."
                     className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-indigo-800 mb-1">Driver ID Number</label>
+                  <label className="block text-xs text-indigo-800 mb-1">
+                    Driver ID Number {selectedTransporterId && drivers.length > 0 && '(Auto-populated)'}
+                  </label>
                   <input
                     type="text"
                     value={formData.driverIdNumber}
                     onChange={(e) => handleInputChange('driverIdNumber', e.target.value)}
-                    placeholder="Enter ID number..."
+                    placeholder="Enter ID number or select driver..."
                     className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-indigo-800 mb-1">Driver Contact Number</label>
+                  <label className="block text-xs text-indigo-800 mb-1">
+                    Driver Contact {selectedTransporterId && drivers.length > 0 && '(Auto-populated)'}
+                  </label>
                   <input
                     type="text"
                     value={formData.driverContactNumber}
                     onChange={(e) => handleInputChange('driverContactNumber', e.target.value)}
-                    placeholder="Enter contact number..."
+                    placeholder="Enter contact or select driver..."
                     className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   />
                 </div>
@@ -726,6 +1063,223 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Quick Add Modals */}
+      {showQuickAdd.type && (
+        <QuickAddModal
+          type={showQuickAdd.type}
+          onClose={() => setShowQuickAdd({ type: null })}
+          onSave={(data) => {
+            switch (showQuickAdd.type) {
+              case 'freight':
+                handleQuickAddFreight(data);
+                break;
+              case 'client':
+                handleQuickAddClient(data);
+                break;
+              case 'transporter':
+                handleQuickAddTransporter(data);
+                break;
+              case 'driver':
+                handleQuickAddDriver(data);
+                break;
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Quick Add Modal Component
+function QuickAddModal({
+  type,
+  onClose,
+  onSave,
+}: {
+  type: 'freight' | 'client' | 'transporter' | 'driver';
+  onClose: () => void;
+  onSave: (data: any) => void;
+}) {
+  const [formData, setFormData] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    await onSave(formData);
+    setSaving(false);
+  };
+
+  const getTitle = () => {
+    switch (type) {
+      case 'freight': return 'Add Freight Company';
+      case 'client': return 'Add Client/Trader';
+      case 'transporter': return 'Add Transporter';
+      case 'driver': return 'Add Driver';
+    }
+  };
+
+  const getColor = () => {
+    switch (type) {
+      case 'freight': return 'purple';
+      case 'client': return 'green';
+      case 'transporter': return 'indigo';
+      case 'driver': return 'blue';
+    }
+  };
+
+  const color = getColor();
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden">
+        <div className={`bg-${color}-600 p-4 flex items-center justify-between`}>
+          <h3 className="text-lg font-bold text-white">{getTitle()}</h3>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-white/20 rounded transition"
+          >
+            <X className="w-5 h-5 text-white" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-180px)]">
+          {type === 'driver' ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    First Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Last Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">ID Number</label>
+                <input
+                  type="text"
+                  onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">License Number</label>
+                <input
+                  type="text"
+                  onChange={(e) => setFormData({ ...formData, licenseNumber: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Code</label>
+                <input
+                  type="text"
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person</label>
+                <input
+                  type="text"
+                  onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Address</label>
+                <textarea
+                  rows={2}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className={`flex-1 px-4 py-2 bg-${color}-600 text-white rounded-lg hover:bg-${color}-700 disabled:opacity-50 transition flex items-center justify-center gap-2`}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Save & Add
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

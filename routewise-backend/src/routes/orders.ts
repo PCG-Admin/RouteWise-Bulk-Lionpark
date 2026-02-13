@@ -474,12 +474,15 @@ router.delete('/:id', async (req, res) => {
 
     console.log(`Deleted order ${orderId}`);
 
-    // Invalidate cache after deleting order
-    await invalidateCache('orders:*');
+    // Invalidate cache after deleting order AND its allocations
+    await Promise.all([
+      invalidateCache('orders:*'),
+      invalidateCache('truck-allocations:*')
+    ]);
 
     res.json({
       success: true,
-      message: `Order ${order.orderNumber} deleted successfully`,
+      message: `Order ${order.orderNumber} and ${allocationIds.length} truck allocation(s) deleted successfully`,
     });
   } catch (error) {
     console.error('Delete order error:', error);

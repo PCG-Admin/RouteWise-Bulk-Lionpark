@@ -42,10 +42,27 @@ CREATE TABLE IF NOT EXISTS sites (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Freight Companies table (Bulk Connections, Bidvest Port Operations, etc.)
+CREATE TABLE IF NOT EXISTS freight_companies (
+  id SERIAL PRIMARY KEY,
+  tenant_id VARCHAR(50) NOT NULL,
+  site_id INTEGER REFERENCES sites(id),
+  name VARCHAR(200) NOT NULL,
+  code VARCHAR(50),
+  contact_person VARCHAR(100),
+  email VARCHAR(255),
+  phone VARCHAR(20),
+  address TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Clients table
 CREATE TABLE IF NOT EXISTS clients (
   id SERIAL PRIMARY KEY,
   tenant_id VARCHAR(50) NOT NULL,
+  site_id INTEGER REFERENCES sites(id),
   name VARCHAR(200) NOT NULL,
   code VARCHAR(50),
   contact_person VARCHAR(100),
@@ -77,6 +94,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
 CREATE TABLE IF NOT EXISTS transporters (
   id SERIAL PRIMARY KEY,
   tenant_id VARCHAR(50) NOT NULL,
+  site_id INTEGER REFERENCES sites(id),
   name VARCHAR(200) NOT NULL,
   code VARCHAR(50),
   contact_person VARCHAR(100),
@@ -247,6 +265,7 @@ CREATE TABLE IF NOT EXISTS truck_allocations (
   id SERIAL PRIMARY KEY,
   tenant_id VARCHAR(50) NOT NULL,
   order_id INTEGER REFERENCES orders(id) NOT NULL,
+  site_id INTEGER REFERENCES sites(id),
 
   -- Tracking reference (e.g., TA-ORD-2024-001-01)
   allocation_ref VARCHAR(50) UNIQUE,
@@ -286,9 +305,13 @@ CREATE TABLE IF NOT EXISTS truck_allocations (
 CREATE INDEX idx_orders_tenant ON orders(tenant_id);
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_order_number ON orders(order_number);
+CREATE INDEX idx_freight_companies_tenant ON freight_companies(tenant_id);
+CREATE INDEX idx_freight_companies_site ON freight_companies(site_id);
 CREATE INDEX idx_clients_tenant ON clients(tenant_id);
+CREATE INDEX idx_clients_site ON clients(site_id);
 CREATE INDEX idx_suppliers_tenant ON suppliers(tenant_id);
 CREATE INDEX idx_transporters_tenant ON transporters(tenant_id);
+CREATE INDEX idx_transporters_site ON transporters(site_id);
 CREATE INDEX idx_planned_visits_tenant ON planned_visits(tenant_id);
 CREATE INDEX idx_planned_visits_status ON planned_visits(status);
 CREATE INDEX idx_visits_tenant ON visits(tenant_id);
@@ -429,6 +452,7 @@ CREATE TABLE IF NOT EXISTS parking_tickets (
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_drivers_license_number ON drivers(license_number);
 CREATE INDEX IF NOT EXISTS idx_drivers_id_number ON drivers(id_number);
+CREATE INDEX IF NOT EXISTS idx_drivers_transporter ON drivers(transporter_id);
 CREATE INDEX IF NOT EXISTS idx_driver_documents_allocation_id ON driver_documents(allocation_id);
 CREATE INDEX IF NOT EXISTS idx_driver_documents_driver_id ON driver_documents(driver_id);
 CREATE INDEX IF NOT EXISTS idx_parking_tickets_allocation_id ON parking_tickets(truck_allocation_id);
@@ -440,9 +464,10 @@ COMMENT ON TABLE orders IS 'Main orders table containing all order information';
 COMMENT ON TABLE planned_visits IS 'Truck allocations - planned visits linked to orders';
 COMMENT ON TABLE visits IS 'Actual visits at sites (Lions Park or Bulk)';
 COMMENT ON TABLE truck_allocations IS 'Simplified truck allocation tracking with vehicle and weight details';
-COMMENT ON TABLE clients IS 'Customers placing orders';
+COMMENT ON TABLE freight_companies IS 'Freight/logistics companies (e.g., Bulk Connections, Bidvest Port Operations) - site-specific';
+COMMENT ON TABLE clients IS 'Customers placing orders - site-specific';
 COMMENT ON TABLE suppliers IS 'Suppliers fulfilling orders';
-COMMENT ON TABLE transporters IS 'Transport companies moving goods';
-COMMENT ON TABLE drivers IS 'Master driver records with license and induction details';
+COMMENT ON TABLE transporters IS 'Transport companies moving goods - site-specific (same transporter can exist at multiple sites)';
+COMMENT ON TABLE drivers IS 'Master driver records with license and induction details - linked to transporters (site access inherited through transporter relationship)';
 COMMENT ON TABLE driver_documents IS 'Uploaded driver documents with OCR results and verification status';
 COMMENT ON TABLE parking_tickets IS 'Parking tickets generated for trucks checking in at Lions Park with comprehensive verification details';

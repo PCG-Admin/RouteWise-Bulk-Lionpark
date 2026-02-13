@@ -370,6 +370,9 @@ router.get('/', async (req, res) => {
     const limitNum = parseInt(String(limit));
     const offset = (pageNum - 1) * limitNum;
 
+    // Import sites table
+    const { sites } = await import('../db/schema');
+
     // Execute query with pagination - parallel queries for data + count
     const [allocations, countResult] = await Promise.all([
       db.select({
@@ -377,11 +380,13 @@ router.get('/', async (req, res) => {
         order: orders,
         client: clients,
         parkingTicket: parkingTickets,
+        site: sites,
       })
         .from(truckAllocations)
         .leftJoin(orders, eq(truckAllocations.orderId, orders.id))
         .leftJoin(clients, eq(orders.clientId, clients.id))
         .leftJoin(parkingTickets, eq(truckAllocations.id, parkingTickets.truckAllocationId))
+        .leftJoin(sites, eq(truckAllocations.siteId, sites.id))
         .where(and(...conditions))
         .orderBy(desc(truckAllocations.scheduledDate))
         .limit(limitNum)
@@ -392,12 +397,12 @@ router.get('/', async (req, res) => {
         .where(and(...conditions))
     ]);
 
-    // Flatten the result to include order and parking ticket details
-    const flattenedAllocations = allocations.map(({ allocation, order, client, parkingTicket }) => ({
+    // Flatten the result to include order, parking ticket, and site details
+    const flattenedAllocations = allocations.map(({ allocation, order, client, parkingTicket, site }) => ({
       ...allocation,
       orderNumber: order?.orderNumber,
       product: order?.product,
-      customer: client?.name,
+      customer: parkingTicket?.customerName || client?.name, // Use parking ticket customer if available
       origin: order?.originAddress,
       originAddress: order?.originAddress,
       destinationAddress: order?.destinationAddress,
@@ -408,11 +413,19 @@ router.get('/', async (req, res) => {
       status: allocation.status || order?.status,
       parkingTicketStatus: parkingTicket?.status || null,
       parkingTicketNumber: parkingTicket?.ticketNumber || null,
+      // Include driver info from parking ticket if available
+      driverName: parkingTicket?.driverName || allocation.driverName,
+      driverPhone: parkingTicket?.driverContactNumber || allocation.driverPhone,
+      driverId: parkingTicket?.driverIdNumber || allocation.driverId,
+      // Include transporter from parking ticket if available
+      transporter: parkingTicket?.transporterName || allocation.transporter,
       requestedPickupDate: order?.requestedPickupDate,
       requestedDeliveryDate: order?.requestedDeliveryDate,
       actualPickupDate: order?.actualPickupDate,
       actualDeliveryDate: order?.actualDeliveryDate,
       createdAt: allocation.createdAt || order?.createdAt,
+      siteId: allocation.siteId,
+      siteName: site?.siteName || null,
     }));
 
     const totalCount = Number(countResult[0].count);
@@ -486,7 +499,7 @@ router.put('/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const validStatuses = ['scheduled', 'in_transit', 'arrived', 'weighing', 'completed', 'cancelled', 'bulks_arrived', 'bulks_departed'];
+    const validStatuses = ['scheduled', 'in_transit', 'arrived', 'weighing', 'completed', 'cancelled', 'bulks_arrived', 'bulks_departed', 'ready_for_dispatch'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -579,6 +592,79 @@ router.put('/:id/status', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update truck allocation status',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * PUT /api/truck-allocations/:id/issue-permit
+ * Issue permit for a verified truck (updates driverValidationStatus to ready_for_dispatch)
+ */
+router.put('/:id/issue-permit', async (req, res) => {
+  try {
+    const tenantId = '1';
+    const { id } = req.params;
+
+    // Verify the truck is in a valid state (checked in and verified)
+    const [allocation] = await db
+      .select()
+      .from(truckAllocations)
+      .where(and(
+        eq(truckAllocations.id, parseInt(id)),
+        eq(truckAllocations.tenantId, tenantId)
+      ))
+      .limit(1);
+
+    if (!allocation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Truck allocation not found',
+      });
+    }
+
+    if (!allocation.status || !['arrived', 'weighing'].includes(allocation.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Truck must be checked in before issuing permit',
+      });
+    }
+
+    if (allocation.driverValidationStatus !== 'verified') {
+      return res.status(400).json({
+        success: false,
+        error: 'Driver must be verified before issuing permit',
+      });
+    }
+
+    // Update driver validation status to ready_for_dispatch
+    const [updated] = await db
+      .update(truckAllocations)
+      .set({
+        driverValidationStatus: 'ready_for_dispatch',
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(truckAllocations.id, parseInt(id)),
+        eq(truckAllocations.tenantId, tenantId)
+      ))
+      .returning();
+
+    console.log(`✓ Permit issued for ${updated.vehicleReg} (ID: ${updated.id})`);
+
+    // Invalidate cache
+    await invalidateCache('truck-allocations:*');
+
+    res.json({
+      success: true,
+      data: updated,
+      message: 'Permit issued successfully',
+    });
+  } catch (error) {
+    console.error('Issue permit error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to issue permit',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

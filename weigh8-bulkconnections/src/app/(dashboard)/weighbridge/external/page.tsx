@@ -46,6 +46,84 @@ function CustomSelect({ label, value, onChange, options, placeholder = "All" }: 
     );
 }
 
+// Helper function to get display status for Bulk Connections view
+function getDisplayStatus(allocation: any) {
+    const status = allocation.status?.toLowerCase();
+    const siteId = allocation.siteId;
+    const siteName = allocation.siteName || 'Unknown Site';
+
+    // Check if it's Lions Park by siteId or siteName
+    const isLionsPark = siteId === 1 || siteName?.toLowerCase().includes('lions park');
+
+    console.log('Status mapping:', {
+        vehicleReg: allocation.vehicleReg,
+        status,
+        siteId,
+        siteName,
+        isLionsPark
+    });
+
+    switch (status) {
+        case 'scheduled':
+        case 'in_transit':
+            return 'Scheduled';
+
+        case 'arrived':
+        case 'weighing':
+            // If at Lions Park, show "Staging" (truck is staging at Lions Park)
+            // Otherwise show "Arrived" (truck has arrived at this site)
+            if (isLionsPark) {
+                return 'Staging';
+            }
+            return 'Arrived';
+
+        case 'completed':
+        case 'departed':
+            // Show "Departed [Site Name]"
+            return `Departed ${siteName}`;
+
+        case 'cancelled':
+            return 'Cancelled';
+
+        default:
+            return status || 'Unknown';
+    }
+}
+
+// Helper function to get status color
+function getStatusColor(allocation: any) {
+    const status = allocation.status?.toLowerCase();
+    const siteId = allocation.siteId;
+    const siteName = allocation.siteName;
+
+    // Check if it's Lions Park by siteId or siteName
+    const isLionsPark = siteId === 1 || siteName?.toLowerCase().includes('lions park');
+
+    switch (status) {
+        case 'scheduled':
+        case 'in_transit':
+            return "bg-amber-50 text-amber-700 border-amber-200";
+
+        case 'arrived':
+        case 'weighing':
+            // Staging at Lions Park or Arrived elsewhere
+            if (isLionsPark) {
+                return "bg-purple-50 text-purple-700 border-purple-200";
+            }
+            return "bg-blue-50 text-blue-700 border-blue-200";
+
+        case 'completed':
+        case 'departed':
+            return "bg-emerald-50 text-emerald-700 border-emerald-200";
+
+        case 'cancelled':
+            return "bg-red-50 text-red-700 border-red-200";
+
+        default:
+            return "bg-slate-50 text-slate-700 border-slate-200";
+    }
+}
+
 export default function ClientWeighbridgePage() {
     const [allocations, setAllocations] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -310,13 +388,11 @@ export default function ClientWeighbridgePage() {
                                 </td>
                                 <td className="px-6 py-4 text-center">
                                     <span className={cn(
-                                        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border capitalize",
-                                        allocation.status === 'completed' ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                                        allocation.status === 'arrived' || allocation.status === 'weighing' ? "bg-blue-50 text-blue-700 border-blue-200" :
-                                        "bg-amber-50 text-amber-700 border-amber-200"
+                                        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border",
+                                        getStatusColor(allocation)
                                     )}>
-                                        {allocation.status === 'completed' ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-                                        <span>{allocation.status || 'pending'}</span>
+                                        {(allocation.status === 'completed' || allocation.status === 'departed') ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                                        <span>{getDisplayStatus(allocation)}</span>
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 font-mono text-sm text-slate-500">{allocation.orderNumber || 'N/A'}</td>

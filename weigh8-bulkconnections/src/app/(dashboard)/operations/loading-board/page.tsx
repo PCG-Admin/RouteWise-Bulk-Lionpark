@@ -179,10 +179,67 @@ export default function LoadingBoardPage() {
     const fetchTrucks = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/operations/loading-board`);
+            const response = await fetch(`http://localhost:3001/api/truck-allocations`);
             if (!response.ok) throw new Error('Failed to fetch trucks');
             const data = await response.json();
-            setTrucks(data.trucks || []);
+
+            // Transform and filter truck allocations for Bulk system view
+            const transformedTrucks = (data.data || [])
+                .filter((allocation: any) => {
+                    // IMPORTANT: Bulk system should NOT show trucks that are:
+                    // - Scheduled for Lions Park (siteId=1, status=scheduled/in_transit)
+                    // - Still in transit to Lions Park
+                    // These trucks haven't reached Lions Park yet, so Bulk doesn't need to see them
+                    if (allocation.siteId === 1 && (allocation.status === 'scheduled' || allocation.status === 'in_transit')) {
+                        return false;
+                    }
+                    return true;
+                })
+                .map((allocation: any) => {
+                    // Determine stage based on status and site
+                    let stage: Stage = 'pending_arrival';
+
+                    // Trucks checked in at Lions Park (siteId=1) are "Staging"
+                    if ((allocation.status === 'arrived' || allocation.status === 'weighing') && allocation.siteId === 1) {
+                        stage = 'staging';
+                    }
+                    // Trucks departed from Lions Park are "Pending Arrival" at Bulk
+                    else if (allocation.status === 'completed' && allocation.siteId === 1) {
+                        stage = 'pending_arrival';
+                    }
+                    // Trucks checked in at Bulk (siteId=2)
+                    else if ((allocation.status === 'arrived' || allocation.status === 'weighing') && allocation.siteId === 2) {
+                        stage = 'checked_in';
+                    }
+                    // Trucks departed from Bulk (siteId=2)
+                    else if (allocation.status === 'completed' && allocation.siteId === 2) {
+                        stage = 'departed';
+                    }
+                    // Trucks scheduled for Bulk (siteId=2) - show as pending arrival
+                    else if (allocation.siteId === 2 && (allocation.status === 'scheduled' || allocation.status === 'in_transit')) {
+                        stage = 'pending_arrival';
+                    }
+
+                    return {
+                        id: allocation.id,
+                        plate: allocation.vehicleReg,
+                        transporter: allocation.transporter || 'Unknown',
+                        driver: allocation.driverName,
+                        product: allocation.product,
+                        customer: allocation.customer,
+                        collection: allocation.origin,
+                        orderNo: allocation.orderNumber || `ORD-${allocation.orderId}`,
+                        ticketNo: allocation.parkingTicketNumber,
+                        scheduledDate: allocation.scheduledDate,
+                        actualArrival: allocation.actualArrival,
+                        departureTime: allocation.departureTime,
+                        siteName: allocation.siteName,
+                        stage,
+                        badges: []
+                    };
+                });
+
+            setTrucks(transformedTrucks);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -506,6 +563,38 @@ export default function LoadingBoardPage() {
                                                                 year: 'numeric'
                                                             })}
                                                         </span>
+                                                    </div>
+                                                )}
+                                                {/* Timestamp for Staging trucks */}
+                                                {truck.stage === 'staging' && truck.actualArrival && (
+                                                    <div className="pt-2 mt-2 border-t border-amber-100 bg-amber-50/50 -mx-3 px-3 py-2 -mb-3">
+                                                        <div className="text-[10px] text-amber-700 font-semibold">
+                                                            🚪 Checked in at {truck.siteName || 'Lions Park'}
+                                                        </div>
+                                                        <div className="text-[9px] text-amber-600 mt-0.5">
+                                                            {new Date(truck.actualArrival).toLocaleString('en-ZA', {
+                                                                day: '2-digit',
+                                                                month: 'short',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {/* Timestamp for Pending Arrival trucks */}
+                                                {truck.stage === 'pending_arrival' && truck.departureTime && (
+                                                    <div className="pt-2 mt-2 border-t border-blue-100 bg-blue-50/50 -mx-3 px-3 py-2 -mb-3">
+                                                        <div className="text-[10px] text-blue-700 font-semibold">
+                                                            🚚 Departed {truck.siteName || 'Lions Park'}
+                                                        </div>
+                                                        <div className="text-[9px] text-blue-600 mt-0.5">
+                                                            {new Date(truck.departureTime).toLocaleString('en-ZA', {
+                                                                day: '2-digit',
+                                                                month: 'short',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </div>
                                                     </div>
                                                 )}
                                                 <div className={cn("text-[10px] text-slate-400", truck.ticketNo || truck.scheduledDate ? "mt-1" : "pt-2 mt-2 border-t border-slate-50")}>

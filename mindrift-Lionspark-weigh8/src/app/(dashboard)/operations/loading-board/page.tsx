@@ -31,24 +31,25 @@ export default function LoadingBoardPage() {
     const [showManualEntry, setShowManualEntry] = useState(false);
 
     // Fetch truck allocations
-    useEffect(() => {
-        async function fetchAllocations() {
-            try {
-                // Filter by site ID for Lions Park (only show allocations for this site)
-                const url = SITE_ID
-                    ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}`
-                    : `${API_BASE_URL}/api/truck-allocations`;
-                const response = await fetch(url);
-                const data = await response.json();
-                if (data.success) {
-                    setAllocations(data.data || []);
-                }
-            } catch (error) {
-                console.error('Failed to fetch truck allocations:', error);
-            } finally {
-                setIsLoading(false);
+    const fetchAllocations = async () => {
+        try {
+            // Filter by site ID for Lions Park (only show allocations for this site)
+            const url = SITE_ID
+                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}`
+                : `${API_BASE_URL}/api/truck-allocations`;
+            const response = await fetch(url);
+            const data = await response.json();
+            if (data.success) {
+                setAllocations(data.data || []);
             }
+        } catch (error) {
+            console.error('Failed to fetch truck allocations:', error);
+        } finally {
+            setIsLoading(false);
         }
+    };
+
+    useEffect(() => {
         fetchAllocations();
 
         // Auto-refresh every 30 seconds for ANPR updates
@@ -58,6 +59,11 @@ export default function LoadingBoardPage() {
 
         return () => clearInterval(interval);
     }, []);
+
+    // Handle verification completion
+    const handleRefresh = () => {
+        fetchAllocations();
+    };
 
     // Filters State
     const [filters, setFilters] = useState({
@@ -106,25 +112,6 @@ export default function LoadingBoardPage() {
         return filteredAllocations.filter(allocation =>
             stageConfig.statuses.includes(allocation.status?.toLowerCase() || 'scheduled')
         );
-    };
-
-    const handleRefresh = async () => {
-        setIsLoading(true);
-        try {
-            // Filter by site ID for Lions Park (only show allocations for this site)
-            const url = SITE_ID
-                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}`
-                : `${API_BASE_URL}/api/truck-allocations`;
-            const response = await fetch(url);
-            const data = await response.json();
-            if (data.success) {
-                setAllocations(data.data || []);
-            }
-        } catch (error) {
-            console.error('Failed to refresh truck allocations:', error);
-        } finally {
-            setIsLoading(false);
-        }
     };
 
     const clearFilters = () => {
@@ -585,11 +572,18 @@ export default function LoadingBoardPage() {
                                                 {/* Driver Validation Status Badge */}
                                                 <div className={cn(
                                                     "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-semibold",
-                                                    allocation.driverValidationStatus === 'verified'
+                                                    allocation.driverValidationStatus === 'ready_for_dispatch'
+                                                        ? "bg-blue-100 text-blue-700 border border-blue-200"
+                                                        : allocation.driverValidationStatus === 'verified'
                                                         ? "bg-green-100 text-green-700 border border-green-200"
                                                         : "bg-yellow-100 text-yellow-700 border border-yellow-200"
                                                 )}>
-                                                    {allocation.driverValidationStatus === 'verified' ? (
+                                                    {allocation.driverValidationStatus === 'ready_for_dispatch' ? (
+                                                        <>
+                                                            <CheckCircle className="w-3.5 h-3.5" />
+                                                            <span>Ready for Dispatch</span>
+                                                        </>
+                                                    ) : allocation.driverValidationStatus === 'verified' ? (
                                                         <>
                                                             <CheckCircle className="w-3.5 h-3.5" />
                                                             <span>Driver Verified</span>
@@ -600,6 +594,23 @@ export default function LoadingBoardPage() {
                                                             <span>Pending Verification</span>
                                                         </>
                                                     )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Departure Time Display (Departed Stage) */}
+                                        {stage.id === 'departed' && allocation.departureTime && (
+                                            <div className="mt-4 pt-3 border-t border-slate-100">
+                                                <div className="flex items-center gap-2 text-xs">
+                                                    <Clock className="w-3 h-3 text-purple-600" />
+                                                    <span className="text-purple-800 font-medium">
+                                                        Departed at {new Date(allocation.departureTime).toLocaleString('en-US', {
+                                                            month: 'short',
+                                                            day: '2-digit',
+                                                            hour: '2-digit',
+                                                            minute: '2-digit'
+                                                        })}
+                                                    </span>
                                                 </div>
                                             </div>
                                         )}

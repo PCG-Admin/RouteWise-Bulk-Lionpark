@@ -38,10 +38,27 @@ export const sites = pgTable('sites', {
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Freight Companies table (Bulk Connections, Bidvest Port Operations, etc.)
+export const freightCompanies = pgTable('freight_companies', {
+  id: serial('id').primaryKey(),
+  tenantId: varchar('tenant_id', { length: 50 }).notNull(),
+  siteId: integer('site_id').references(() => sites.id),
+  name: varchar('name', { length: 200 }).notNull(),
+  code: varchar('code', { length: 50 }),
+  contactPerson: varchar('contact_person', { length: 100 }),
+  email: varchar('email', { length: 255 }),
+  phone: varchar('phone', { length: 20 }),
+  address: text('address'),
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Clients table
 export const clients = pgTable('clients', {
   id: serial('id').primaryKey(),
   tenantId: varchar('tenant_id', { length: 50 }).notNull(),
+  siteId: integer('site_id').references(() => sites.id),
   name: varchar('name', { length: 200 }).notNull(),
   code: varchar('code', { length: 50 }),
   contactPerson: varchar('contact_person', { length: 100 }),
@@ -73,6 +90,7 @@ export const suppliers = pgTable('suppliers', {
 export const transporters = pgTable('transporters', {
   id: serial('id').primaryKey(),
   tenantId: varchar('tenant_id', { length: 50 }).notNull(),
+  siteId: integer('site_id').references(() => sites.id),
   name: varchar('name', { length: 200 }).notNull(),
   code: varchar('code', { length: 50 }),
   contactPerson: varchar('contact_person', { length: 100 }),
@@ -399,6 +417,7 @@ export const parkingTickets = pgTable('parking_tickets', {
 
 export type User = typeof users.$inferSelect;
 export type Site = typeof sites.$inferSelect;
+export type FreightCompany = typeof freightCompanies.$inferSelect;
 export type Client = typeof clients.$inferSelect;
 export type Supplier = typeof suppliers.$inferSelect;
 export type Transporter = typeof transporters.$inferSelect;
@@ -409,6 +428,7 @@ export type Driver = typeof drivers.$inferSelect;
 export type DriverDocument = typeof driverDocuments.$inferSelect;
 
 export type NewOrder = typeof orders.$inferInsert;
+export type NewFreightCompany = typeof freightCompanies.$inferInsert;
 export type NewClient = typeof clients.$inferInsert;
 export type NewSupplier = typeof suppliers.$inferInsert;
 export type NewTransporter = typeof transporters.$inferInsert;

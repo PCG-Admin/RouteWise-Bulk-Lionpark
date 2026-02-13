@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db';
 import { parkingTickets, truckAllocations, orders, clients, transporters, drivers } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
+import { invalidateCache } from '../utils/cache';
 
 const router = Router();
 
@@ -301,6 +302,9 @@ router.post('/:id/process', async (req, res) => {
     const { id } = req.params;
     const { processedBy, ...ticketUpdates } = req.body;
 
+    console.log('🔍 Processing parking ticket:', id);
+    console.log('📦 Received data:', ticketUpdates);
+
     // Get the parking ticket
     const [ticket] = await db
       .select()
@@ -312,11 +316,14 @@ router.post('/:id/process', async (req, res) => {
       .limit(1);
 
     if (!ticket) {
+      console.error('❌ Parking ticket not found:', id);
       return res.status(404).json({
         success: false,
         error: 'Parking ticket not found',
       });
     }
+
+    console.log('📋 Current ticket status:', ticket.status);
 
     // Check if all required fields are filled to determine status
     const requiredFields = [
@@ -328,9 +335,21 @@ router.post('/:id/process', async (req, res) => {
       ticketUpdates.driverContactNumber || ticket.driverContactNumber,
     ];
 
+    console.log('🔎 Required fields check:', {
+      driverPermitNumber: ticketUpdates.driverPermitNumber || ticket.driverPermitNumber,
+      boardNumber: ticketUpdates.boardNumber || ticket.boardNumber,
+      driverIdNumber: ticketUpdates.driverIdNumber || ticket.driverIdNumber,
+      transporterName: ticketUpdates.transporterName || ticket.transporterName,
+      driverName: ticketUpdates.driverName || ticket.driverName,
+      driverContactNumber: ticketUpdates.driverContactNumber || ticket.driverContactNumber,
+    });
+
     const allFieldsFilled = requiredFields.every(field => field && field.toString().trim() !== '');
     const ticketStatus = allFieldsFilled ? 'processed' : 'partially_processed';
     const driverValidationStatus = allFieldsFilled ? 'verified' : 'pending_verification';
+
+    console.log('✅ All fields filled:', allFieldsFilled);
+    console.log('📊 New status:', ticketStatus);
 
     // Update parking ticket status
     const [updatedTicket] = await db
@@ -342,8 +361,26 @@ router.post('/:id/process', async (req, res) => {
         processedBy: processedBy || 'System',
         updatedAt: new Date(),
       })
-      .where(eq(parkingTickets.id, parseInt(id)))
+      .where(and(
+        eq(parkingTickets.id, parseInt(id)),
+        eq(parkingTickets.tenantId, tenantId)
+      ))
       .returning();
+
+    if (!updatedTicket) {
+      console.error('❌ Failed to update parking ticket - no rows affected');
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to update parking ticket - update returned no rows',
+      });
+    }
+
+    console.log('💾 Updated ticket:', {
+      id: updatedTicket.id,
+      status: updatedTicket.status,
+      driverName: updatedTicket.driverName,
+      transporterName: updatedTicket.transporterName,
+    });
 
     // Update truck allocation driver validation status
     await db
@@ -352,7 +389,13 @@ router.post('/:id/process', async (req, res) => {
         driverValidationStatus: driverValidationStatus,
         updatedAt: new Date(),
       })
-      .where(eq(truckAllocations.id, ticket.truckAllocationId));
+      .where(and(
+        eq(truckAllocations.id, ticket.truckAllocationId),
+        eq(truckAllocations.tenantId, tenantId)
+      ));
+
+    // Invalidate cache after updating verification status
+    await invalidateCache('truck-allocations:*');
 
     // If driver ID number and Cutler permit provided, update driver record
     if (ticketUpdates.driverIdNumber && ticket.driverName) {

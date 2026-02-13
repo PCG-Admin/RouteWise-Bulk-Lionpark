@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertCircle, Camera, Cast, Maximize2, MoreVertical, Power, RefreshCw, Settings, Signal, Video, VideoOff, Wifi } from "lucide-react";
+import { AlertCircle, Camera, Cast, Maximize2, MoreVertical, Power, RefreshCw, Settings, Signal, Video, VideoOff, Wifi, Upload, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const API_BASE_URL = "http://localhost:3001";
 
@@ -19,6 +19,15 @@ export default function CCTVPage() {
     const [cameras, setCameras] = useState<CameraData[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Manual upload state
+    const [selectedImage, setSelectedImage] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const [uploadDirection, setUploadDirection] = useState<'entry' | 'exit'>('entry');
+    const [uploading, setUploading] = useState(false);
+    const [uploadResult, setUploadResult] = useState<string | null>(null);
+    const [ocrDetails, setOcrDetails] = useState<{ plate: string; confidence: number } | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         fetchCameras();
@@ -39,6 +48,122 @@ export default function CCTVPage() {
             setCameras([]);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setSelectedImage(file);
+            setUploadResult(null);
+            setOcrDetails(null);
+
+            // Create preview
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleUpload = async () => {
+        if (!selectedImage) {
+            alert('Please select an image first');
+            return;
+        }
+
+        setUploading(true);
+        setUploadResult(null);
+
+        try {
+            const formData = new FormData();
+            formData.append('image', selectedImage);
+            formData.append('direction', uploadDirection);
+
+            const response = await fetch(`${API_BASE_URL}/api/anpr-mock/manual-upload`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                const plate = result.data.extractedPlate;
+                setOcrDetails({
+                    plate: plate,
+                    confidence: result.data.ocrConfidence
+                });
+
+                // Poll for ANPR checker to process (up to 45 seconds)
+                let pollAttempts = 0;
+                const maxPollAttempts = 15; // 15 attempts x 3 seconds = 45 seconds max
+
+                const pollForCheckIn = async () => {
+                    try {
+                        // Check if the plate matched an allocation and was checked in
+                        const allocResponse = await fetch(`${API_BASE_URL}/api/truck-allocations?vehicleReg=${encodeURIComponent(plate)}`);
+                        const allocResult = await allocResponse.json();
+
+                        if (allocResult.success && allocResult.data && allocResult.data.length > 0) {
+                            const allocation = allocResult.data.find((a: any) =>
+                                a.vehicleReg.replace(/\s+/g, '').toLowerCase() === plate.toLowerCase()
+                            );
+
+                            if (allocation) {
+                                // Check if it was processed (status changed from scheduled)
+                                if (uploadDirection === 'entry' && allocation.status === 'arrived') {
+                                    setUploadResult(`✅ Plate ${plate} detected! Truck checked in successfully at ${new Date(allocation.actualArrival).toLocaleTimeString()}.`);
+                                    return; // Stop polling
+                                } else if (uploadDirection === 'exit' && allocation.status === 'completed') {
+                                    setUploadResult(`✅ Plate ${plate} detected! Truck departed successfully at ${new Date(allocation.departureTime).toLocaleTimeString()}.`);
+                                    return; // Stop polling
+                                }
+                            }
+                        }
+
+                        // Not processed yet, continue polling
+                        pollAttempts++;
+                        if (pollAttempts < maxPollAttempts) {
+                            setTimeout(pollForCheckIn, 3000); // Poll every 3 seconds
+                        } else {
+                            // Timeout - ANPR didn't process it
+                            setUploadResult(`⚠️ Plate ${plate} detected but ANPR auto-processing timed out. Check loading board manually.`);
+                        }
+                    } catch (err) {
+                        setUploadResult(`✅ ${result.message}`);
+                    }
+                };
+
+                // Start polling after 2 seconds
+                setTimeout(pollForCheckIn, 2000);
+
+                // Clear selection after 8 seconds (longer to see results)
+                setTimeout(() => {
+                    setSelectedImage(null);
+                    setImagePreview(null);
+                    setUploadResult(null);
+                    setOcrDetails(null);
+                }, 8000);
+            } else {
+                setUploadResult(`❌ ${result.error || 'Upload failed'}`);
+                setOcrDetails(null);
+            }
+        } catch (err) {
+            console.error('Upload error:', err);
+            setUploadResult('❌ Network error during upload');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const clearImage = () => {
+        setSelectedImage(null);
+        setImagePreview(null);
+        setUploadResult(null);
+        setOcrDetails(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
         }
     };
 
@@ -69,6 +194,167 @@ export default function CCTVPage() {
                         <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
                         {loading ? 'Refreshing...' : 'Refresh Feeds'}
                     </button>
+                </div>
+            </div>
+
+            {/* Manual Image Upload for Testing ANPR */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-2xl p-6 shadow-sm">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                        <Upload className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-900">Manual ANPR Test Upload</h2>
+                        <p className="text-sm text-slate-600">Upload a license plate image - OCR will extract the plate number automatically</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Left: Upload Section */}
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                                Direction
+                            </label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button
+                                    onClick={() => setUploadDirection('entry')}
+                                    disabled={uploading}
+                                    className={cn(
+                                        'px-4 py-3 rounded-lg font-semibold transition border-2 flex items-center justify-center gap-2',
+                                        uploadDirection === 'entry'
+                                            ? 'bg-green-600 text-white border-green-600'
+                                            : 'bg-white text-slate-700 border-slate-300 hover:border-green-400'
+                                    )}
+                                >
+                                    <ArrowRight className="w-4 h-4" />
+                                    Entry Gate
+                                </button>
+                                <button
+                                    onClick={() => setUploadDirection('exit')}
+                                    disabled={uploading}
+                                    className={cn(
+                                        'px-4 py-3 rounded-lg font-semibold transition border-2 flex items-center justify-center gap-2',
+                                        uploadDirection === 'exit'
+                                            ? 'bg-purple-600 text-white border-purple-600'
+                                            : 'bg-white text-slate-700 border-slate-300 hover:border-purple-400'
+                                    )}
+                                >
+                                    <ArrowLeft className="w-4 h-4" />
+                                    Exit Gate
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                                Select Image
+                            </label>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleImageSelect}
+                                disabled={uploading}
+                                className="hidden"
+                            />
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={uploading}
+                                className="w-full px-4 py-3 border-2 border-dashed border-slate-300 rounded-lg hover:border-blue-400 transition text-slate-600 hover:text-blue-600 font-medium disabled:opacity-50"
+                            >
+                                {selectedImage ? selectedImage.name : 'Click to select image'}
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={handleUpload}
+                            disabled={!selectedImage || uploading}
+                            className={cn(
+                                'w-full px-6 py-3 rounded-lg font-semibold transition flex items-center justify-center gap-2',
+                                uploadDirection === 'entry'
+                                    ? 'bg-green-600 text-white hover:bg-green-700'
+                                    : 'bg-purple-600 text-white hover:bg-purple-700',
+                                'disabled:opacity-50 disabled:cursor-not-allowed'
+                            )}
+                        >
+                            {uploading ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    Processing...
+                                </>
+                            ) : (
+                                <>
+                                    <Upload className="w-5 h-5" />
+                                    Test {uploadDirection === 'entry' ? 'Check-In' : 'Departure'}
+                                </>
+                            )}
+                        </button>
+
+                        {selectedImage && !uploading && (
+                            <button
+                                onClick={clearImage}
+                                className="w-full px-4 py-2 text-sm text-slate-600 hover:text-slate-900 font-medium"
+                            >
+                                Clear Selection
+                            </button>
+                        )}
+
+                        {uploadResult && (
+                            <div className={cn(
+                                'p-4 rounded-lg border-2 space-y-2',
+                                uploadResult.startsWith('✅')
+                                    ? 'bg-green-50 border-green-200 text-green-800'
+                                    : uploadResult.startsWith('⚠️')
+                                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                    : 'bg-red-50 border-red-200 text-red-800'
+                            )}>
+                                <p className="text-sm font-medium">{uploadResult}</p>
+                                {ocrDetails && (
+                                    <div className={cn(
+                                        'pt-2 border-t space-y-1',
+                                        uploadResult.startsWith('✅')
+                                            ? 'border-green-300'
+                                            : uploadResult.startsWith('⚠️')
+                                            ? 'border-amber-300'
+                                            : 'border-red-300'
+                                    )}>
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-medium">Detected Plate:</span>
+                                            <span className="text-sm font-bold font-mono">{ocrDetails.plate}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-medium">AI Confidence:</span>
+                                            <span className="text-sm font-bold">{ocrDetails.confidence}%</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right: Preview */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                            Image Preview
+                        </label>
+                        <div className="aspect-video bg-slate-900 rounded-lg flex items-center justify-center overflow-hidden border-2 border-slate-300">
+                            {imagePreview ? (
+                                <img
+                                    src={imagePreview}
+                                    alt="Preview"
+                                    className="w-full h-full object-contain"
+                                />
+                            ) : (
+                                <div className="text-center text-slate-600">
+                                    <Camera className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                                    <p className="text-xs uppercase tracking-widest opacity-30 font-semibold">
+                                        No Image Selected
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
 

@@ -372,33 +372,168 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                         </div>
                     )}
 
-                    {activeTab === "timeline" && (
-                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden p-6">
-                            <div className="relative pl-8 space-y-8 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-200">
-                                {[
-                                    { event: "Booking Created", time: "08:00", active: true },
-                                    { event: "Pre-Arrival Notification", time: "08:30", active: true },
-                                    { event: "Arrived at Gate", time: "09:15", active: truck.stage !== 'pending_arrival' },
-                                    { event: "Induction Check", time: "09:20", active: truck.stage !== 'pending_arrival' },
-                                    { event: "Weighbridge In", time: "-", active: false },
-                                    { event: "Loading Started", time: "-", active: false },
-                                ].map((step, i) => (
-                                    <div key={i} className="relative">
-                                        <div className={cn(
-                                            "absolute -left-[29px] top-1 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-white",
-                                            step.active ? "border-blue-500 text-blue-500" : "border-slate-300 text-slate-300"
-                                        )}>
-                                            <div className={cn("w-2 h-2 rounded-full", step.active ? "bg-blue-500" : "bg-transparent")} />
-                                        </div>
-                                        <div>
-                                            <p className={cn("text-sm font-medium", step.active ? "text-slate-900" : "text-slate-500")}>{step.event}</p>
-                                            <p className="text-xs text-slate-500">{step.time}</p>
-                                        </div>
+                    {activeTab === "timeline" && (() => {
+                        // Build dynamic timeline based on actual truck data
+                        const timelineEvents = [];
+
+                        // 1. Order/Booking Created
+                        if (truck.createdAt || truck.scheduledDate) {
+                            timelineEvents.push({
+                                event: "Order Created",
+                                timestamp: truck.createdAt || truck.scheduledDate,
+                                active: true,
+                                color: "blue"
+                            });
+                        }
+
+                        // 2. Scheduled for Lions Park
+                        if (truck.scheduledDate) {
+                            timelineEvents.push({
+                                event: "Scheduled for Lions Park",
+                                timestamp: truck.scheduledDate,
+                                active: true,
+                                color: "blue"
+                            });
+                        }
+
+                        // 3. Checked in at Lions Park (when truck has actualArrival and was at siteId 1)
+                        if (truck.actualArrival) {
+                            const siteName = truck.siteName || 'Lions Park';
+                            timelineEvents.push({
+                                event: `Checked In at ${siteName}`,
+                                timestamp: truck.actualArrival,
+                                active: true,
+                                color: "green"
+                            });
+                        }
+
+                        // 4. Driver verification completed (if we have that data)
+                        // Note: This would need to be added to the truck data from backend
+
+                        // 5. Departed from Lions Park (when stage >= pending_arrival)
+                        if (truck.departureTime && (truck.stage === 'pending_arrival' || truck.stage === 'checked_in' || truck.stage === 'departed')) {
+                            timelineEvents.push({
+                                event: "Departed Lions Park",
+                                timestamp: truck.departureTime,
+                                active: true,
+                                color: "purple"
+                            });
+                        }
+
+                        // 6. Checked in at Bulk Connections (when stage is checked_in or departed)
+                        if (truck.stage === 'checked_in' || truck.stage === 'departed') {
+                            // If we have a separate bulkArrival timestamp, use it; otherwise estimate based on stage
+                            const bulkArrivalTime = truck.bulkArrival || (truck.stage === 'checked_in' ? new Date().toISOString() : null);
+                            if (bulkArrivalTime) {
+                                timelineEvents.push({
+                                    event: "Checked In at Bulk Connections",
+                                    timestamp: bulkArrivalTime,
+                                    active: true,
+                                    color: "green"
+                                });
+                            }
+                        }
+
+                        // 7. Weighbridge operations
+                        if (truck.stage === 'checked_in' || truck.stage === 'departed') {
+                            if (truck.grossWeight || truck.tareWeight) {
+                                timelineEvents.push({
+                                    event: "Weighbridge Completed",
+                                    timestamp: truck.weighbridgeTime || null,
+                                    active: true,
+                                    color: "blue"
+                                });
+                            }
+                        }
+
+                        // 8. Loading operations
+                        if (truck.stage === 'departed' || (truck.stage === 'checked_in' && truck.netWeight)) {
+                            timelineEvents.push({
+                                event: "Loading Completed",
+                                timestamp: truck.loadingCompletedTime || null,
+                                active: !!(truck.netWeight),
+                                color: "amber"
+                            });
+                        }
+
+                        // 9. Departed from Bulk (final stage)
+                        if (truck.stage === 'departed') {
+                            // Use departureTime only if we're in the final departed stage and have left Bulk
+                            const finalDepartureTime = truck.bulkDepartureTime || truck.finalDepartureTime;
+                            if (finalDepartureTime) {
+                                timelineEvents.push({
+                                    event: "Departed Bulk Connections",
+                                    timestamp: finalDepartureTime,
+                                    active: true,
+                                    color: "purple"
+                                });
+                            }
+                        }
+
+                        // Format timestamp helper
+                        const formatTimestamp = (timestamp: string | null) => {
+                            if (!timestamp) return "-";
+                            try {
+                                const date = new Date(timestamp);
+                                return date.toLocaleString('en-ZA', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                });
+                            } catch {
+                                return "-";
+                            }
+                        };
+
+                        const getEventColor = (color: string) => {
+                            switch (color) {
+                                case 'green': return 'border-green-500 text-green-500 bg-green-500';
+                                case 'purple': return 'border-purple-500 text-purple-500 bg-purple-500';
+                                case 'amber': return 'border-amber-500 text-amber-500 bg-amber-500';
+                                default: return 'border-blue-500 text-blue-500 bg-blue-500';
+                            }
+                        };
+
+                        return (
+                            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden p-6">
+                                <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
+                                    <Clock className="w-5 h-5 text-slate-400" />
+                                    Journey Timeline
+                                </h3>
+
+                                {timelineEvents.length > 0 ? (
+                                    <div className="relative pl-8 space-y-8 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-200">
+                                        {timelineEvents.map((step, i) => (
+                                            <div key={i} className="relative">
+                                                <div className={cn(
+                                                    "absolute -left-[29px] top-1 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-white",
+                                                    step.active ? getEventColor(step.color).split(' ')[0] + ' ' + getEventColor(step.color).split(' ')[1] : "border-slate-300 text-slate-300"
+                                                )}>
+                                                    <div className={cn("w-2 h-2 rounded-full", step.active ? getEventColor(step.color).split(' ')[2] : "bg-transparent")} />
+                                                </div>
+                                                <div>
+                                                    <p className={cn("text-sm font-semibold mb-1", step.active ? "text-slate-900" : "text-slate-500")}>
+                                                        {step.event}
+                                                    </p>
+                                                    <p className="text-xs text-slate-600 font-medium">
+                                                        {formatTimestamp(step.timestamp)}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
+                                ) : (
+                                    <div className="text-center py-8 text-slate-500">
+                                        <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                                        <p className="text-sm font-medium">No timeline events available yet</p>
+                                        <p className="text-xs mt-1">Events will appear as the truck progresses through the system</p>
+                                    </div>
+                                )}
                             </div>
-                        </div>
-                    )}
+                        );
+                    })()}
                 </div>
             </div>
         </div>

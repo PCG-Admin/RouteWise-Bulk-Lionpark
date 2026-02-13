@@ -13,6 +13,10 @@ import operationsRoutes from './routes/operations';
 import anprMockRoutes from './routes/anpr-mock';
 import driverVerificationRoutes from './routes/driver-verification';
 import parkingTicketsRoutes from './routes/parking-tickets';
+import freightCompaniesRoutes from './routes/freight-companies';
+import clientsRoutes from './routes/clients';
+import transportersRoutes from './routes/transporters';
+import driversRoutes from './routes/drivers';
 import { anprCheckerService } from './services/anpr-checker';
 import { requestLogger, performanceTracker, performanceMetrics } from './middleware/logger';
 import { getCacheStats } from './utils/cache';
@@ -102,6 +106,10 @@ app.use('/api', referenceDataRoutes);
 app.use('/api/anpr-mock', anprMockRoutes);
 app.use('/api/driver-verification', driverVerificationRoutes);
 app.use('/api/parking-tickets', parkingTicketsRoutes);
+app.use('/api/freight-companies', freightCompaniesRoutes);
+app.use('/api/clients', clientsRoutes);
+app.use('/api/transporters', transportersRoutes);
+app.use('/api/drivers', driversRoutes);
 
 // 404 handler
 app.use((req, res) => {

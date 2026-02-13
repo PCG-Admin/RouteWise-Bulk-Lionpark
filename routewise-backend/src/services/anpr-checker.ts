@@ -1,6 +1,7 @@
 import { db } from '../db';
-import { truckAllocations } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { truckAllocations, parkingTickets, orders, clients, transporters } from '../db/schema';
+import { eq, and, desc } from 'drizzle-orm';
+import { invalidateCache } from '../utils/cache';
 
 interface ANPRPlateDetection {
   id: number;
@@ -175,13 +176,26 @@ class ANPRCheckerService {
         .from(truckAllocations)
         .where(eq(truckAllocations.tenantId, tenantId));
 
-      const matchedAllocation = allocations.find(a =>
-        this.normalizePlateNumber(a.vehicleReg) === plateNumber &&
-        (a.status === 'scheduled' || a.status === 'arrived')
-      );
+      // Match based on direction
+      let matchedAllocation;
+
+      if (detection.direction === 'entry') {
+        // Entry: Look for scheduled trucks
+        matchedAllocation = allocations.find(a =>
+          this.normalizePlateNumber(a.vehicleReg) === plateNumber &&
+          a.status === 'scheduled'
+        );
+      } else {
+        // Exit: Look for trucks with ready_for_dispatch driver validation status
+        matchedAllocation = allocations.find(a =>
+          this.normalizePlateNumber(a.vehicleReg) === plateNumber &&
+          a.driverValidationStatus === 'ready_for_dispatch'
+        );
+      }
 
       if (matchedAllocation) {
         console.log(`✅ MATCH FOUND! Allocation ID: ${matchedAllocation.id}, Order: ${matchedAllocation.orderId}`);
+        console.log(`   Current status: ${matchedAllocation.status}`);
 
         // Determine target status based on detection direction and current status
         let targetStatus: string;
@@ -195,11 +209,11 @@ class ANPRCheckerService {
             return false;
           }
         } else {
-          // Exit detection: arrived → completed
-          if (matchedAllocation.status === 'arrived' || matchedAllocation.status === 'weighing') {
+          // Exit detection: driverValidationStatus ready_for_dispatch → completed
+          if (matchedAllocation.driverValidationStatus === 'ready_for_dispatch') {
             targetStatus = 'completed';
           } else {
-            console.log(`   Not in correct status for departure, skipping`);
+            console.log(`   Not ready for dispatch, skipping`);
             return false;
           }
         }
@@ -223,8 +237,16 @@ class ANPRCheckerService {
           .set(updateData)
           .where(eq(truckAllocations.id, matchedAllocation.id));
 
+        // Invalidate cache after ANPR auto check-in/departure
+        await invalidateCache('truck-allocations:*');
+
         console.log(`🚚 Vehicle ${matchedAllocation.vehicleReg} (ID: ${matchedAllocation.id}) → ${targetStatus}`);
         console.log(`   ${detection.direction === 'entry' ? 'CHECK-IN' : 'DEPARTURE'} via ANPR at ${detection.detectedAt}`);
+
+        // Auto-create parking ticket on check-in (entry)
+        if (detection.direction === 'entry' && targetStatus === 'arrived') {
+          await this.createParkingTicket(matchedAllocation.id, tenantId, new Date(detection.detectedAt));
+        }
 
         return true;
       } else {
@@ -263,7 +285,7 @@ class ANPRCheckerService {
       lastCheckedId: this.lastCheckedId,
       workflow: {
         onEntry: 'Match plate → scheduled → arrived (auto check-in)',
-        onExit: 'Match plate → arrived → completed (auto departure)',
+        onExit: 'Match plate → driverValidationStatus: ready_for_dispatch → completed (auto departure)',
       }
     };
   }
@@ -292,6 +314,123 @@ class ANPRCheckerService {
     };
 
     return await this.processPlateDetection(testDetection);
+  }
+
+  /**
+   * Trigger an immediate check (useful after manual uploads)
+   */
+  async checkNow(): Promise<void> {
+    console.log('🔄 Immediate ANPR check triggered');
+    await this.checkPlates();
+  }
+
+  /**
+   * Create parking ticket for checked-in truck
+   */
+  private async createParkingTicket(allocationId: number, tenantId: string, arrivalTime: Date): Promise<void> {
+    try {
+      // Check if parking ticket already exists
+      const existingTicket = await db
+        .select()
+        .from(parkingTickets)
+        .where(and(
+          eq(parkingTickets.truckAllocationId, allocationId),
+          eq(parkingTickets.tenantId, tenantId)
+        ))
+        .limit(1);
+
+      if (existingTicket.length > 0) {
+        console.log(`   ⚠️  Parking ticket already exists for allocation ${allocationId}`);
+        return;
+      }
+
+      // Generate ticket number
+      const year = new Date().getFullYear();
+      const prefix = `PT-${year}-`;
+
+      const latestTickets = await db
+        .select({ ticketNumber: parkingTickets.ticketNumber })
+        .from(parkingTickets)
+        .where(eq(parkingTickets.tenantId, tenantId))
+        .orderBy(desc(parkingTickets.ticketNumber))
+        .limit(1);
+
+      let sequence = 1;
+      if (latestTickets.length > 0 && latestTickets[0].ticketNumber.startsWith(prefix)) {
+        const lastNumber = latestTickets[0].ticketNumber.replace(prefix, '');
+        sequence = parseInt(lastNumber) + 1;
+      }
+
+      const ticketNumber = `${prefix}${sequence.toString().padStart(6, '0')}`;
+
+      // Get allocation details with order and client info
+      const allocationData = await db
+        .select({
+          allocation: truckAllocations,
+          order: orders,
+          client: clients,
+        })
+        .from(truckAllocations)
+        .leftJoin(orders, eq(truckAllocations.orderId, orders.id))
+        .leftJoin(clients, eq(orders.clientId, clients.id))
+        .where(and(
+          eq(truckAllocations.id, allocationId),
+          eq(truckAllocations.tenantId, tenantId)
+        ))
+        .limit(1);
+
+      if (allocationData.length === 0) {
+        console.log(`   ⚠️  Allocation ${allocationId} not found for parking ticket creation`);
+        return;
+      }
+
+      const { allocation, order, client } = allocationData[0];
+
+      // Get transporter details if available
+      let transporterData = null;
+      if (allocation.transporter) {
+        const transporterResults = await db
+          .select()
+          .from(transporters)
+          .where(and(
+            eq(transporters.name, allocation.transporter),
+            eq(transporters.tenantId, tenantId)
+          ))
+          .limit(1);
+
+        if (transporterResults.length > 0) {
+          transporterData = transporterResults[0];
+        }
+      }
+
+      // Create parking ticket
+      await db.insert(parkingTickets).values({
+        tenantId,
+        truckAllocationId: allocationId,
+        ticketNumber,
+        arrivalDatetime: arrivalTime,
+        personOnDuty: 'ANPR System',
+        terminalNumber: '1',
+        vehicleReg: allocation.vehicleReg,
+        status: 'pending',
+        reference: order?.orderNumber || '',
+        remarks: order ? 'Booked - ANPR Auto Check-In' : 'Not Booked - ANPR Auto Check-In',
+        deliveryAddress: order?.destinationAddress || '',
+        customerNumber: client?.code || '',
+        customerName: client?.name || '',
+        customerPhone: client?.phone || '',
+        transporterNumber: transporterData?.code || '',
+        transporterName: allocation.transporter || '',
+        transporterPhone: transporterData?.phone || '',
+        driverName: allocation.driverName || '',
+        driverContactNumber: allocation.driverPhone || '',
+        freightCompanyName: 'Bulk Connections',
+      });
+
+      console.log(`   🎫 Parking ticket ${ticketNumber} created automatically for allocation ${allocationId}`);
+    } catch (error: any) {
+      console.error(`   ❌ Failed to create parking ticket for allocation ${allocationId}:`, error.message);
+    }
   }
 }
 

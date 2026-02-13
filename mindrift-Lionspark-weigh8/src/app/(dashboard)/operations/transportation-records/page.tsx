@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { FileText, Filter, Download, Calendar, Loader2, AlertCircle, X, Truck, User, Phone, Weight, MapPin, Package, ClipboardCheck } from "lucide-react";
 import ParkingTicketModal from "@/components/ParkingTicketModal";
 import ParkingTicketViewModal from "@/components/ParkingTicketViewModal";
+import { OrderDetailSlideOver } from "@/components/OrderDetailSlideOver";
 import Pagination from "@/components/Pagination";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -47,6 +48,7 @@ export default function TransportationRecordsPage() {
     const [showModal, setShowModal] = useState(false);
     const [viewingTicketAllocationId, setViewingTicketAllocationId] = useState<number | null>(null);
     const [validatingAllocationId, setValidatingAllocationId] = useState<number | null>(null);
+    const [issuingPermitId, setIssuingPermitId] = useState<number | null>(null);
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -98,11 +100,40 @@ export default function TransportationRecordsPage() {
         }
     };
 
+    const handleIssuePermit = async (allocationId: number, vehicleReg: string) => {
+        if (!confirm(`Issue permit for ${vehicleReg}? This will mark the truck as "Ready for Dispatch".`)) {
+            return;
+        }
+
+        setIssuingPermitId(allocationId);
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/truck-allocations/${allocationId}/issue-permit`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                await fetchAllocations();
+                alert(`Permit issued successfully for ${vehicleReg}!`);
+            } else {
+                alert(`Failed to issue permit: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Issue permit error:', error);
+            alert('Failed to issue permit. Please try again.');
+        } finally {
+            setIssuingPermitId(null);
+        }
+    };
+
     // Helper functions (must be defined before use in filters)
     const getLoadingBoardStatus = (status: string) => {
         // Map database status to loading board stages for Lionspark
         if (['scheduled', 'in_transit'].includes(status)) return 'Pending Arrival';
         if (['arrived', 'weighing'].includes(status)) return 'Checked In';
+        if (status === 'ready_for_dispatch') return 'Ready for Dispatch';
         if (['completed', 'cancelled'].includes(status)) return 'Departed';
         return status;
     };
@@ -110,12 +141,14 @@ export default function TransportationRecordsPage() {
     const getStatusColor = (status: string) => {
         if (['scheduled', 'in_transit'].includes(status)) return 'bg-blue-100 text-blue-600 border-blue-200';
         if (['arrived', 'weighing'].includes(status)) return 'bg-green-100 text-green-600 border-green-200';
+        if (status === 'ready_for_dispatch') return 'bg-emerald-100 text-emerald-600 border-emerald-200';
         if (['completed'].includes(status)) return 'bg-purple-100 text-purple-600 border-purple-200';
         if (['cancelled'].includes(status)) return 'bg-red-100 text-red-600 border-red-200';
         return 'bg-slate-100 text-slate-600 border-slate-200';
     };
 
     const getVerificationStatusColor = (driverStatus: string | null, ticketStatus: string | null) => {
+        if (driverStatus === 'ready_for_dispatch') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
         if (driverStatus === 'verified') return 'bg-green-100 text-green-700 border-green-200';
         if (ticketStatus === 'partially_processed') return 'bg-orange-100 text-orange-700 border-orange-200';
         if (driverStatus === 'pending_verification') return 'bg-yellow-100 text-yellow-700 border-yellow-200';
@@ -124,6 +157,7 @@ export default function TransportationRecordsPage() {
 
     const getVerificationStatusText = (driverStatus: string | null, ticketStatus: string | null, loadingStatus: string) => {
         if (!['arrived', 'weighing', 'completed'].includes(loadingStatus)) return 'Not Checked In';
+        if (driverStatus === 'ready_for_dispatch') return 'Ready for Dispatch';
         if (driverStatus === 'verified') return 'Verified';
         if (ticketStatus === 'partially_processed') return 'Partially Filled';
         if (driverStatus === 'pending_verification') return 'Pending';
@@ -359,6 +393,7 @@ export default function TransportationRecordsPage() {
                             <option value="All">All</option>
                             <option value="Pending Arrival">Pending Arrival</option>
                             <option value="Checked In">Checked In</option>
+                            <option value="Ready for Dispatch">Ready for Dispatch</option>
                             <option value="Departed">Departed</option>
                         </select>
                     </div>
@@ -473,12 +508,31 @@ export default function TransportationRecordsPage() {
                                             <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getVerificationStatusColor(allocation.driverValidationStatus, allocation.parkingTicketStatus)}`}>
                                                 {getVerificationStatusText(allocation.driverValidationStatus, allocation.parkingTicketStatus, allocation.status)}
                                             </span>
-                                            {['arrived', 'weighing', 'completed'].includes(allocation.status) && (
+                                            {/* Show Complete Validation button for checked-in trucks that are not yet verified */}
+                                            {['arrived', 'weighing'].includes(allocation.status) && allocation.driverValidationStatus !== 'verified' && allocation.driverValidationStatus !== 'ready_for_dispatch' && (
                                                 <button
                                                     onClick={() => setValidatingAllocationId(allocation.id)}
                                                     className="text-green-600 hover:text-green-700 text-xs font-medium flex items-center gap-1"
                                                 >
                                                     <ClipboardCheck className="w-3 h-3" /> Complete Validation
+                                                </button>
+                                            )}
+                                            {/* Show Issue Permit button for verified trucks */}
+                                            {allocation.driverValidationStatus === 'verified' && allocation.status !== 'completed' && (
+                                                <button
+                                                    onClick={() => handleIssuePermit(allocation.id, allocation.vehicleReg)}
+                                                    disabled={issuingPermitId === allocation.id}
+                                                    className="text-blue-600 hover:text-blue-700 text-xs font-medium flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {issuingPermitId === allocation.id ? (
+                                                        <>
+                                                            <Loader2 className="w-3 h-3 animate-spin" /> Issuing...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <FileText className="w-3 h-3" /> Issue Permit
+                                                        </>
+                                                    )}
                                                 </button>
                                             )}
                                         </div>
@@ -510,205 +564,11 @@ export default function TransportationRecordsPage() {
             </div>
 
             {/* Allocation Details Modal */}
-            {showModal && selectedAllocation && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-                        {/* Modal Header */}
-                        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-                            <div>
-                                <h2 className="text-xl font-bold text-slate-900">Truck Allocation Details</h2>
-                                <p className="text-sm text-slate-500 mt-1">
-                                    {selectedAllocation.allocationRef ? (
-                                        <>
-                                            <span className="font-semibold text-blue-600">{selectedAllocation.allocationRef}</span>
-                                            {' | '}
-                                            {selectedAllocation.orderNumber || `Order #${selectedAllocation.orderId}`}
-                                        </>
-                                    ) : (
-                                        <>Allocation ID: #{selectedAllocation.id} | {selectedAllocation.orderNumber || `Order #${selectedAllocation.orderId}`}</>
-                                    )}
-                                </p>
-                            </div>
-                            <button
-                                onClick={closeModal}
-                                className="p-2 hover:bg-slate-100 rounded-lg transition"
-                            >
-                                <X className="w-5 h-5 text-slate-500" />
-                            </button>
-                        </div>
-
-                        {/* Modal Content */}
-                        <div className="p-6 space-y-6">
-                            {/* Order Information */}
-                            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                                <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
-                                    <Package className="w-4 h-4" />
-                                    Order Information
-                                </h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <p className="text-xs text-blue-600 mb-1">Order Number</p>
-                                        <p className="text-sm font-medium text-blue-900">{selectedAllocation.orderNumber || `Order #${selectedAllocation.orderId}`}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-blue-600 mb-1">Customer</p>
-                                        <p className="text-sm font-medium text-blue-900">{selectedAllocation.customer || '-'}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-blue-600 mb-1">Product</p>
-                                        <p className="text-sm font-medium text-blue-900">{selectedAllocation.product || '-'}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-blue-600 mb-1">Origin</p>
-                                        <p className="text-sm font-medium text-blue-900">{selectedAllocation.origin || '-'}</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Vehicle & Driver Information */}
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                                <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                                    <Truck className="w-4 h-4" />
-                                    Vehicle & Driver Information
-                                </h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <p className="text-xs text-slate-600 mb-1">Vehicle Registration</p>
-                                        <p className="text-sm font-medium text-slate-900">{selectedAllocation.vehicleReg}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-600 mb-1">Transporter</p>
-                                        <p className="text-sm font-medium text-slate-900">{selectedAllocation.transporter || '-'}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-600 mb-1 flex items-center gap-1">
-                                            <User className="w-3 h-3" />
-                                            Driver Name
-                                        </p>
-                                        <p className="text-sm font-medium text-slate-900">{selectedAllocation.driverName || '-'}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-600 mb-1 flex items-center gap-1">
-                                            <Phone className="w-3 h-3" />
-                                            Driver Phone
-                                        </p>
-                                        <p className="text-sm font-medium text-slate-900">{selectedAllocation.driverPhone || '-'}</p>
-                                    </div>
-                                    <div className="col-span-2">
-                                        <p className="text-xs text-slate-600 mb-1">Driver ID</p>
-                                        <p className="text-sm font-medium text-slate-900">{selectedAllocation.driverId || '-'}</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Weight Information */}
-                            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                                <h3 className="text-sm font-semibold text-green-900 mb-3 flex items-center gap-2">
-                                    <Weight className="w-4 h-4" />
-                                    Weight Information
-                                </h3>
-                                <div className="grid grid-cols-3 gap-4">
-                                    <div>
-                                        <p className="text-xs text-green-600 mb-1">Gross Weight</p>
-                                        <p className="text-sm font-medium text-green-900 font-mono">{selectedAllocation.grossWeight ? `${selectedAllocation.grossWeight}t` : '-'}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-green-600 mb-1">Tare Weight</p>
-                                        <p className="text-sm font-medium text-green-900 font-mono">{selectedAllocation.tareWeight ? `${selectedAllocation.tareWeight}t` : '-'}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-green-600 mb-1">Net Weight</p>
-                                        <p className="text-sm font-medium text-green-900 font-mono">{selectedAllocation.netWeight ? `${selectedAllocation.netWeight}t` : '-'}</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Schedule & Status */}
-                            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                                <h3 className="text-sm font-semibold text-purple-900 mb-3 flex items-center gap-2">
-                                    <Calendar className="w-4 h-4" />
-                                    Schedule & Status
-                                </h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <p className="text-xs text-purple-600 mb-1">Scheduled Date</p>
-                                        <p className="text-sm font-medium text-purple-900">
-                                            {selectedAllocation.scheduledDate
-                                                ? new Date(selectedAllocation.scheduledDate).toLocaleDateString('en-US', {
-                                                    year: 'numeric',
-                                                    month: 'long',
-                                                    day: 'numeric',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit'
-                                                  })
-                                                : '-'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-purple-600 mb-1">Loading Board Status</p>
-                                        <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(selectedAllocation.status)}`}>
-                                            {getLoadingBoardStatus(selectedAllocation.status)}
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-purple-600 mb-1">Actual Arrival</p>
-                                        <p className="text-sm font-medium text-purple-900">
-                                            {selectedAllocation.actualArrival
-                                                ? new Date(selectedAllocation.actualArrival).toLocaleString('en-US')
-                                                : '-'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-purple-600 mb-1">Departure Time</p>
-                                        <p className="text-sm font-medium text-purple-900">
-                                            {selectedAllocation.departureTime
-                                                ? new Date(selectedAllocation.departureTime).toLocaleString('en-US')
-                                                : '-'}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Additional Information */}
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                                <h3 className="text-sm font-semibold text-slate-900 mb-3">Additional Information</h3>
-                                <div className="space-y-3">
-                                    <div>
-                                        <p className="text-xs text-slate-600 mb-1">Ticket Number</p>
-                                        <p className="text-sm font-medium text-slate-900">{selectedAllocation.ticketNo || '-'}</p>
-                                    </div>
-                                    {selectedAllocation.notes && (
-                                        <div>
-                                            <p className="text-xs text-slate-600 mb-1">Notes</p>
-                                            <p className="text-sm text-slate-700 bg-white p-3 rounded-lg border border-slate-200">{selectedAllocation.notes}</p>
-                                        </div>
-                                    )}
-                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-200">
-                                        <div>
-                                            <p className="text-xs text-slate-500 mb-1">Created At</p>
-                                            <p className="text-xs font-mono text-slate-600">{new Date(selectedAllocation.createdAt).toLocaleString('en-US')}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-slate-500 mb-1">Last Updated</p>
-                                            <p className="text-xs font-mono text-slate-600">{new Date(selectedAllocation.updatedAt).toLocaleString('en-US')}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Modal Footer */}
-                        <div className="sticky bottom-0 bg-slate-50 border-t border-slate-200 px-6 py-4 flex justify-end">
-                            <button
-                                onClick={closeModal}
-                                className="px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition font-medium"
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <OrderDetailSlideOver
+                order={selectedAllocation}
+                onClose={closeModal}
+                onStageChange={fetchAllocations}
+            />
 
             {/* Parking Ticket View Modal (Read-Only) */}
             {viewingTicketAllocationId && (

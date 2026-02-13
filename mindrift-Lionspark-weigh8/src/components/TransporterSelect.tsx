@@ -12,7 +12,7 @@ interface Transporter {
 
 interface TransporterSelectProps {
   value: string;
-  onChange: (transporterName: string, transporterPhone: string | null, transporterCode: string | null) => void;
+  onChange: (transporterName: string, transporterPhone: string | null, transporterCode: string | null, transporterId?: number) => void;
   placeholder?: string;
   disabled?: boolean;
 }
@@ -68,13 +68,13 @@ export default function TransporterSelect({
   );
 
   const handleSelect = (transporter: Transporter) => {
-    onChange(transporter.name, transporter.phone, transporter.code);
+    onChange(transporter.name, transporter.phone, transporter.code, transporter.id);
     setIsOpen(false);
     setSearchQuery('');
   };
 
   const handleClear = () => {
-    onChange('', null, null);
+    onChange('', null, null, undefined);
     setSearchQuery('');
   };
 
