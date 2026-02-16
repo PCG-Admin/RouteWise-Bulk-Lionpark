@@ -108,13 +108,14 @@ router.post('/manual-upload', upload.single('image'), async (req, res) => {
       });
     }
 
-    const { direction = 'entry' } = req.body;
+    const { direction = 'entry', siteId = '1' } = req.body;
     const filename = req.file.originalname;
 
     console.log(`\n📸 MANUAL IMAGE UPLOAD - Starting Gemini Vision AI:`);
     console.log(`   File: ${filename}`);
     console.log(`   Size: ${req.file.size} bytes`);
     console.log(`   Direction: ${direction}`);
+    console.log(`   Site ID: ${siteId}`);
 
     // Initialize Gemini Vision model
     console.log('🤖 Initializing Gemini Vision AI...');
@@ -167,7 +168,8 @@ router.post('/manual-upload', upload.single('image'), async (req, res) => {
       plateNumber: plateNumber,
       detectedAt: new Date().toISOString(),
       cameraType: direction === 'entry' ? 'entrance_camera' : 'exit_camera',
-      direction: direction
+      direction: direction,
+      siteId: parseInt(siteId) // Add site ID to detection
     };
 
     // Add to mock storage

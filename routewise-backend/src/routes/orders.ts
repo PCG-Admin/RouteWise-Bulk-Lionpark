@@ -230,7 +230,7 @@ router.post('/upload', requireAuth, upload.single('excelFile'), async (req: Auth
 router.get('/', async (req, res) => {
   try {
     const tenantId = '1'; // Default tenant for development
-    const { status, search, siteId, page = '1', limit = '50' } = req.query;
+    const { status, search, siteId, page = '1', limit = '1000' } = req.query;
 
     // Create cache key based on query parameters
     const cacheKey = `orders:tenant:${tenantId}:status:${status || 'all'}:site:${siteId || 'all'}:search:${search || 'none'}:page:${page}:limit:${limit}`;

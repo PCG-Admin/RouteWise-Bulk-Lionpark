@@ -171,6 +171,11 @@ export default function LoadingBoardPage() {
         transporter: ""
     });
     const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
+    const [manualGate, setManualGate] = useState<'entry' | 'exit'>('entry');
+    const [manualPlate, setManualPlate] = useState('');
+    const [searchedAllocation, setSearchedAllocation] = useState<any>(null);
+    const [isSearching, setIsSearching] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
 
     useEffect(() => {
         fetchTrucks();
@@ -179,45 +184,78 @@ export default function LoadingBoardPage() {
     const fetchTrucks = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`http://localhost:3001/api/truck-allocations`);
-            if (!response.ok) throw new Error('Failed to fetch trucks');
-            const data = await response.json();
 
-            // Transform and filter truck allocations for Bulk system view
-            const transformedTrucks = (data.data || [])
-                .filter((allocation: any) => {
-                    // IMPORTANT: Bulk system should NOT show trucks that are:
-                    // - Scheduled for Lions Park (siteId=1, status=scheduled/in_transit)
-                    // - Still in transit to Lions Park
-                    // These trucks haven't reached Lions Park yet, so Bulk doesn't need to see them
-                    if (allocation.siteId === 1 && (allocation.status === 'scheduled' || allocation.status === 'in_transit')) {
-                        return false;
+            // Fetch allocations
+            const allocationsResponse = await fetch(`http://localhost:3001/api/truck-allocations`);
+            if (!allocationsResponse.ok) throw new Error('Failed to fetch trucks');
+            const allocationsData = await allocationsResponse.json();
+
+            // Try to fetch journey data (non-blocking - if it fails, continue without it)
+            const lionsJourneyMap = new Map();
+            const bulkJourneyMap = new Map();
+
+            try {
+                const [lionsJourneyResponse, bulkJourneyResponse] = await Promise.all([
+                    fetch(`http://localhost:3001/api/site-journey/site/1/latest`),
+                    fetch(`http://localhost:3001/api/site-journey/site/2/latest`)
+                ]);
+
+                if (lionsJourneyResponse.ok) {
+                    const lionsJourneyData = await lionsJourneyResponse.json();
+                    if (lionsJourneyData?.success && lionsJourneyData.data) {
+                        lionsJourneyData.data.forEach((journey: any) => {
+                            lionsJourneyMap.set(journey.allocationId, journey);
+                        });
                     }
-                    return true;
+                }
+
+                if (bulkJourneyResponse.ok) {
+                    const bulkJourneyData = await bulkJourneyResponse.json();
+                    if (bulkJourneyData?.success && bulkJourneyData.data) {
+                        bulkJourneyData.data.forEach((journey: any) => {
+                            bulkJourneyMap.set(journey.allocationId, journey);
+                        });
+                    }
+                }
+            } catch (journeyError) {
+                console.warn('Journey data fetch failed (non-critical):', journeyError);
+                // Continue without journey data
+            }
+
+            // Transform truck allocations with journey-aware status
+            // BULK VIEW: Show full supply chain (Lions → Bulk)
+            const transformedTrucks = (allocationsData.data || [])
+                .filter((allocation: any) => {
+                    // Only show Bulk-bound allocations (destination = site 2)
+                    // OR allocations that have visited Lions (part of our supply chain)
+                    return allocation.siteId === 2 || lionsJourneyMap.has(allocation.id);
                 })
                 .map((allocation: any) => {
-                    // Determine stage based on status and site
+                    const lionsJourney = lionsJourneyMap.get(allocation.id);
+                    const bulkJourney = bulkJourneyMap.get(allocation.id);
+
+                    // Determine stage based on journey status (priority: Bulk > Lions)
                     let stage: Stage = 'pending_arrival';
 
-                    // Trucks checked in at Lions Park (siteId=1) are "Staging"
-                    if ((allocation.status === 'arrived' || allocation.status === 'weighing') && allocation.siteId === 1) {
-                        stage = 'staging';
-                    }
-                    // Trucks departed from Lions Park are "Pending Arrival" at Bulk
-                    else if (allocation.status === 'completed' && allocation.siteId === 1) {
-                        stage = 'pending_arrival';
-                    }
-                    // Trucks checked in at Bulk (siteId=2)
-                    else if ((allocation.status === 'arrived' || allocation.status === 'weighing') && allocation.siteId === 2) {
-                        stage = 'checked_in';
-                    }
-                    // Trucks departed from Bulk (siteId=2)
-                    else if (allocation.status === 'completed' && allocation.siteId === 2) {
-                        stage = 'departed';
-                    }
-                    // Trucks scheduled for Bulk (siteId=2) - show as pending arrival
-                    else if (allocation.siteId === 2 && (allocation.status === 'scheduled' || allocation.status === 'in_transit')) {
-                        stage = 'pending_arrival';
+                    if (bulkJourney) {
+                        // Priority 1: Truck has been to Bulk - use Bulk journey status
+                        if (bulkJourney.status === 'arrived') {
+                            stage = 'checked_in';
+                        } else if (bulkJourney.status === 'departed') {
+                            stage = 'departed';
+                        }
+                    } else if (lionsJourney) {
+                        // Priority 2: Truck is at Lions - show supply chain status
+                        if (lionsJourney.status === 'arrived') {
+                            stage = 'staging'; // "Staging at Lions"
+                        } else if (lionsJourney.status === 'departed') {
+                            stage = 'pending_arrival'; // "In Transit to Bulk" (left Lions, not yet at Bulk)
+                        }
+                    } else {
+                        // Priority 3: No journey entries yet - check allocation status
+                        if (allocation.status === 'scheduled' || allocation.status === 'in_transit') {
+                            stage = 'pending_arrival';
+                        }
                     }
 
                     return {
@@ -231,11 +269,16 @@ export default function LoadingBoardPage() {
                         orderNo: allocation.orderNumber || `ORD-${allocation.orderId}`,
                         ticketNo: allocation.parkingTicketNumber,
                         scheduledDate: allocation.scheduledDate,
-                        actualArrival: allocation.actualArrival,
+                        actualArrival: bulkJourney?.timestamp || lionsJourney?.timestamp || allocation.actualArrival,
                         departureTime: allocation.departureTime,
                         siteName: allocation.siteName,
                         stage,
-                        badges: []
+                        badges: [],
+                        // Include journey status for debugging
+                        lionsStatus: lionsJourney?.status,
+                        bulkStatus: bulkJourney?.status,
+                        lionsTimestamp: lionsJourney?.timestamp,
+                        bulkTimestamp: bulkJourney?.timestamp,
                     };
                 });
 
@@ -274,6 +317,81 @@ export default function LoadingBoardPage() {
         return badge;
     };
 
+    const handleSearchPlate = async () => {
+        if (!manualPlate.trim()) {
+            alert('Please enter a vehicle registration number');
+            return;
+        }
+
+        setIsSearching(true);
+        setSearchedAllocation(null);
+
+        try {
+            const response = await fetch(`http://localhost:3001/api/truck-allocations`);
+            if (!response.ok) throw new Error('Failed to search allocations');
+
+            const data = await response.json();
+            const allocation = data.data?.find((a: any) =>
+                a.vehicleReg?.toLowerCase().replace(/\s/g, '') === manualPlate.toLowerCase().replace(/\s/g, '')
+            );
+
+            if (allocation) {
+                setSearchedAllocation(allocation);
+            } else {
+                alert(`No allocation found for plate: ${manualPlate}`);
+            }
+        } catch (error) {
+            console.error('Search error:', error);
+            alert('Failed to search for allocation');
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const handleConfirmGateAction = async () => {
+        if (!searchedAllocation) return;
+
+        setIsProcessing(true);
+        try {
+            const journeyPayload = {
+                allocationId: searchedAllocation.id,
+                siteId: 2, // Bulk Connections
+                eventType: manualGate === 'entry' ? 'arrival' : 'departure',
+                status: manualGate === 'entry' ? 'arrived' : 'departed',
+                detectionMethod: 'manual_entry',
+                detectionSource: 'Loading Board - Manual Gate Entry',
+                notes: `Manual ${manualGate} gate action for ${searchedAllocation.vehicleReg}`
+            };
+
+            const response = await fetch(`http://localhost:3001/api/site-journey`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(journeyPayload)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to record gate action');
+            }
+
+            alert(`✓ ${manualGate === 'entry' ? 'Check-in' : 'Check-out'} recorded successfully for ${searchedAllocation.vehicleReg}`);
+
+            // Reset and close
+            setIsManualEntryOpen(false);
+            setManualPlate('');
+            setSearchedAllocation(null);
+            setManualGate('entry');
+
+            // Refresh data
+            fetchTrucks();
+        } catch (error) {
+            console.error('Gate action error:', error);
+            alert(`Failed to record gate action: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <VisitDetailSlideOver
@@ -282,35 +400,125 @@ export default function LoadingBoardPage() {
                 onStageChange={fetchTrucks}
             />
 
-            <Modal isOpen={isManualEntryOpen} onClose={() => setIsManualEntryOpen(false)} title="Manual Truck Entry">
-                <form className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium text-slate-700">Truck Plate</label>
-                            <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" placeholder="ABC 123 GP" />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium text-slate-700">Transporter</label>
-                            <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" placeholder="Select Transporter" />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium text-slate-700">Driver Name</label>
-                            <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium text-slate-700">ID / Passport</label>
-                            <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            <Modal isOpen={isManualEntryOpen} onClose={() => { setIsManualEntryOpen(false); setManualPlate(''); setSearchedAllocation(null); }} title="Manual Gate Entry - Bulk Connections">
+                <div className="space-y-5">
+                    {/* Gate Selection */}
+                    <div className="space-y-2">
+                        <label className="text-sm font-bold text-slate-700">Select Gate</label>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setManualGate('entry')}
+                                className={cn(
+                                    "px-4 py-3 rounded-lg font-semibold text-sm transition-all border-2",
+                                    manualGate === 'entry'
+                                        ? "bg-emerald-50 text-emerald-700 border-emerald-500"
+                                        : "bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300"
+                                )}
+                            >
+                                🚪 Entry Gate
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setManualGate('exit')}
+                                className={cn(
+                                    "px-4 py-3 rounded-lg font-semibold text-sm transition-all border-2",
+                                    manualGate === 'exit'
+                                        ? "bg-purple-50 text-purple-700 border-purple-500"
+                                        : "bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300"
+                                )}
+                            >
+                                🚛 Exit Gate
+                            </button>
                         </div>
                     </div>
-                    <div className="space-y-1">
-                        <label className="text-sm font-medium text-slate-700">Product / Order</label>
-                        <input type="text" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" placeholder="Search Order..." />
+
+                    {/* Plate Search */}
+                    <div className="space-y-2">
+                        <label className="text-sm font-bold text-slate-700">Vehicle Registration</label>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={manualPlate}
+                                onChange={(e) => setManualPlate(e.target.value.toUpperCase())}
+                                onKeyPress={(e) => e.key === 'Enter' && handleSearchPlate()}
+                                className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-sm font-mono font-bold uppercase"
+                                placeholder="ABC 123 GP"
+                                disabled={isSearching}
+                            />
+                            <button
+                                type="button"
+                                onClick={handleSearchPlate}
+                                disabled={isSearching || !manualPlate.trim()}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isSearching ? 'Searching...' : 'Search'}
+                            </button>
+                        </div>
                     </div>
-                    <div className="pt-4 flex justify-end gap-2">
-                        <button type="button" onClick={() => setIsManualEntryOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Cancel</button>
-                        <button type="button" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Create Entry</button>
+
+                    {/* Search Results */}
+                    {searchedAllocation && (
+                        <div className="p-4 bg-green-50 border-2 border-green-200 rounded-lg space-y-3">
+                            <div className="flex items-center gap-2 text-green-700 font-bold">
+                                <CheckCircle2 className="w-5 h-5" />
+                                <span>Allocation Found</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase">Vehicle Reg</p>
+                                    <p className="font-bold text-slate-900">{searchedAllocation.vehicleReg}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase">Driver</p>
+                                    <p className="font-medium text-slate-900">{searchedAllocation.driverName || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase">Customer</p>
+                                    <p className="font-medium text-slate-900">{searchedAllocation.customer || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase">Product</p>
+                                    <p className="font-medium text-slate-900">{searchedAllocation.product || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase">Order No</p>
+                                    <p className="font-medium text-slate-900">{searchedAllocation.orderNumber || 'N/A'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase">Transporter</p>
+                                    <p className="font-medium text-slate-900">{searchedAllocation.transporter || 'N/A'}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="pt-4 flex justify-end gap-2 border-t">
+                        <button
+                            type="button"
+                            onClick={() => { setIsManualEntryOpen(false); setManualPlate(''); setSearchedAllocation(null); }}
+                            className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium"
+                            disabled={isProcessing}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirmGateAction}
+                            disabled={!searchedAllocation || isProcessing}
+                            className={cn(
+                                "px-6 py-2 rounded-lg text-sm font-bold",
+                                manualGate === 'entry'
+                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    : "bg-purple-600 hover:bg-purple-700 text-white",
+                                "disabled:opacity-50 disabled:cursor-not-allowed"
+                            )}
+                        >
+                            {isProcessing ? 'Processing...' : `Confirm ${manualGate === 'entry' ? 'Check-In' : 'Check-Out'}`}
+                        </button>
                     </div>
-                </form>
+                </div>
             </Modal>
 
             {/* Detailed Stage View Modal */}
@@ -589,6 +797,38 @@ export default function LoadingBoardPage() {
                                                         </div>
                                                         <div className="text-[9px] text-blue-600 mt-0.5">
                                                             {new Date(truck.departureTime).toLocaleString('en-ZA', {
+                                                                day: '2-digit',
+                                                                month: 'short',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {/* Timestamp for Checked In trucks at Bulk */}
+                                                {truck.stage === 'checked_in' && truck.bulkTimestamp && (
+                                                    <div className="pt-2 mt-2 border-t border-emerald-100 bg-emerald-50/50 -mx-3 px-3 py-2 -mb-3">
+                                                        <div className="text-[10px] text-emerald-700 font-medium uppercase tracking-wide">
+                                                            Checked in at Bulk Connections
+                                                        </div>
+                                                        <div className="text-xs text-emerald-800 font-semibold mt-1">
+                                                            {new Date(truck.bulkTimestamp).toLocaleString('en-ZA', {
+                                                                day: '2-digit',
+                                                                month: 'short',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {/* Timestamp for Departed trucks from Bulk */}
+                                                {truck.stage === 'departed' && truck.bulkTimestamp && (
+                                                    <div className="pt-2 mt-2 border-t border-purple-100 bg-purple-50/50 -mx-3 px-3 py-2 -mb-3">
+                                                        <div className="text-[10px] text-purple-700 font-medium uppercase tracking-wide">
+                                                            Departed from Bulk Connections
+                                                        </div>
+                                                        <div className="text-xs text-purple-800 font-semibold mt-1">
+                                                            {new Date(truck.bulkTimestamp).toLocaleString('en-ZA', {
                                                                 day: '2-digit',
                                                                 month: 'short',
                                                                 hour: '2-digit',

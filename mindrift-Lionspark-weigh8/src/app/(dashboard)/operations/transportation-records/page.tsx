@@ -84,16 +84,73 @@ export default function TransportationRecordsPage() {
         try {
             setLoading(true);
             setError(null);
-            // Filter by site ID for Lions Park (only show allocations for this site)
-            const url = SITE_ID
+
+            // Filter by site ID for Lions Park (fetch both allocations and visits)
+            const allocationsUrl = SITE_ID
                 ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}`
                 : `${API_BASE_URL}/api/truck-allocations`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('Failed to fetch truck allocations');
-            const result = await response.json();
-            setAllocations(result.data || []);
+
+            const visitsUrl = SITE_ID
+                ? `${API_BASE_URL}/api/visits?siteId=${SITE_ID}`
+                : `${API_BASE_URL}/api/visits`;
+
+            const journeyUrl = SITE_ID
+                ? `${API_BASE_URL}/api/site-journey/site/${SITE_ID}/latest`
+                : null;
+
+            // Fetch allocations, visits, and journey data in parallel
+            const [allocationsResponse, visitsResponse] = await Promise.all([
+                fetch(allocationsUrl),
+                fetch(visitsUrl)
+            ]);
+
+            if (!allocationsResponse.ok) throw new Error('Failed to fetch truck allocations');
+
+            const allocationsResult = await allocationsResponse.json();
+            const visitsResult = await visitsResponse.json();
+
+            // Fetch journey data (non-blocking)
+            const journeyMap = new Map();
+            if (journeyUrl) {
+                try {
+                    const journeyResponse = await fetch(journeyUrl);
+                    if (journeyResponse.ok) {
+                        const journeyData = await journeyResponse.json();
+                        if (journeyData?.success && journeyData.data) {
+                            journeyData.data.forEach((journey: any) => {
+                                journeyMap.set(journey.allocationId, {
+                                    siteStatus: journey.status,
+                                    lastEvent: journey.eventType,
+                                    lastUpdated: journey.timestamp,
+                                });
+                            });
+                        }
+                    }
+                } catch (journeyError) {
+                    console.warn('Journey data fetch failed (non-critical):', journeyError);
+                }
+            }
+
+            // Merge journey status with allocations
+            const allocationsWithJourney = (allocationsResult.data || []).map((alloc: any) => {
+                const journey = journeyMap.get(alloc.id);
+                return {
+                    ...alloc,
+                    siteStatus: journey?.siteStatus || alloc.status,
+                    lastEvent: journey?.lastEvent,
+                    lastUpdated: journey?.lastUpdated || alloc.updatedAt,
+                };
+            });
+
+            // Combine allocations and visits
+            const combined = [
+                ...allocationsWithJourney,
+                ...(visitsResult.success ? visitsResult.data : [])
+            ];
+
+            setAllocations(combined);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load truck allocations');
+            setError(err instanceof Error ? err.message : 'Failed to load transportation records');
             setAllocations([]);
         } finally {
             setLoading(false);
@@ -148,6 +205,7 @@ export default function TransportationRecordsPage() {
     };
 
     const getVerificationStatusColor = (driverStatus: string | null, ticketStatus: string | null) => {
+        if (driverStatus === 'non_matched') return 'bg-red-100 text-red-700 border-red-200';
         if (driverStatus === 'ready_for_dispatch') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
         if (driverStatus === 'verified') return 'bg-green-100 text-green-700 border-green-200';
         if (ticketStatus === 'partially_processed') return 'bg-orange-100 text-orange-700 border-orange-200';
@@ -156,8 +214,10 @@ export default function TransportationRecordsPage() {
     };
 
     const getVerificationStatusText = (driverStatus: string | null, ticketStatus: string | null, loadingStatus: string) => {
-        if (!['arrived', 'weighing', 'completed'].includes(loadingStatus)) return 'Not Checked In';
-        if (driverStatus === 'ready_for_dispatch') return 'Ready for Dispatch';
+        if (driverStatus === 'non_matched') return 'Non-Matched';
+        // Include 'departed' and 'in_transit' as they were checked in at some point
+        if (!['arrived', 'weighing', 'completed', 'departed', 'in_transit'].includes(loadingStatus)) return 'Not Checked In';
+        if (driverStatus === 'ready_for_dispatch') return 'Verified - Permit Issued';
         if (driverStatus === 'verified') return 'Verified';
         if (ticketStatus === 'partially_processed') return 'Partially Filled';
         if (driverStatus === 'pending_verification') return 'Pending';
@@ -215,14 +275,14 @@ export default function TransportationRecordsPage() {
             if (filters.verificationStatus === 'Pending' && (allocation.driverValidationStatus !== 'pending_verification' || allocation.parkingTicketStatus === 'partially_processed')) {
                 return false;
             }
-            if (filters.verificationStatus === 'Not Checked In' && ['arrived', 'weighing', 'completed'].includes(allocation.status)) {
+            if (filters.verificationStatus === 'Not Checked In' && ['arrived', 'weighing', 'completed'].includes(allocation.siteStatus || allocation.status)) {
                 return false;
             }
         }
 
         // Loading status filter
         if (filters.loadingStatus !== 'All') {
-            const boardStatus = getLoadingBoardStatus(allocation.status);
+            const boardStatus = getLoadingBoardStatus(allocation.siteStatus || allocation.status);
             if (boardStatus !== filters.loadingStatus) {
                 return false;
             }
@@ -499,17 +559,17 @@ export default function TransportationRecordsPage() {
                                         {allocation.netWeight ? `${allocation.netWeight}t` : '-'}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(allocation.status)}`}>
-                                            {getLoadingBoardStatus(allocation.status)}
+                                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(allocation.siteStatus || allocation.status)}`}>
+                                            {getLoadingBoardStatus(allocation.siteStatus || allocation.status)}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex flex-col gap-2">
                                             <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getVerificationStatusColor(allocation.driverValidationStatus, allocation.parkingTicketStatus)}`}>
-                                                {getVerificationStatusText(allocation.driverValidationStatus, allocation.parkingTicketStatus, allocation.status)}
+                                                {getVerificationStatusText(allocation.driverValidationStatus, allocation.parkingTicketStatus, allocation.siteStatus || allocation.status)}
                                             </span>
-                                            {/* Show Complete Validation button for checked-in trucks that are not yet verified */}
-                                            {['arrived', 'weighing'].includes(allocation.status) && allocation.driverValidationStatus !== 'verified' && allocation.driverValidationStatus !== 'ready_for_dispatch' && (
+                                            {/* Show Complete Validation button for checked-in trucks that are not yet verified (exclude non-matched visits) */}
+                                            {['arrived', 'weighing'].includes(allocation.siteStatus || allocation.status) && allocation.driverValidationStatus !== 'verified' && allocation.driverValidationStatus !== 'ready_for_dispatch' && allocation.driverValidationStatus !== 'non_matched' && (
                                                 <button
                                                     onClick={() => setValidatingAllocationId(allocation.id)}
                                                     className="text-green-600 hover:text-green-700 text-xs font-medium flex items-center gap-1"
@@ -518,7 +578,7 @@ export default function TransportationRecordsPage() {
                                                 </button>
                                             )}
                                             {/* Show Issue Permit button for verified trucks */}
-                                            {allocation.driverValidationStatus === 'verified' && allocation.status !== 'completed' && (
+                                            {allocation.driverValidationStatus === 'verified' && (allocation.siteStatus || allocation.status) !== 'completed' && (
                                                 <button
                                                     onClick={() => handleIssuePermit(allocation.id, allocation.vehicleReg)}
                                                     disabled={issuingPermitId === allocation.id}

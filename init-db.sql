@@ -301,6 +301,26 @@ CREATE TABLE IF NOT EXISTS truck_allocations (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Allocation Site Journey table - tracks truck journey across multiple sites
+CREATE TABLE IF NOT EXISTS allocation_site_journey (
+  id SERIAL PRIMARY KEY,
+  tenant_id VARCHAR(50) NOT NULL,
+  allocation_id INTEGER NOT NULL REFERENCES truck_allocations(id),
+  order_id INTEGER REFERENCES orders(id),
+  site_id INTEGER NOT NULL REFERENCES sites(id),
+  vehicle_reg VARCHAR(50) NOT NULL,
+  driver_name VARCHAR(100),
+  event_type VARCHAR(20) NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  timestamp TIMESTAMP DEFAULT NOW() NOT NULL,
+  detection_method VARCHAR(20),
+  detection_source VARCHAR(100),
+  notes TEXT,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Create indexes for better query performance
 CREATE INDEX idx_orders_tenant ON orders(tenant_id);
 CREATE INDEX idx_orders_status ON orders(status);
@@ -460,6 +480,16 @@ CREATE INDEX IF NOT EXISTS idx_parking_tickets_ticket_number ON parking_tickets(
 CREATE INDEX IF NOT EXISTS idx_parking_tickets_status ON parking_tickets(status);
 CREATE INDEX IF NOT EXISTS idx_parking_tickets_vehicle_reg ON parking_tickets(vehicle_reg);
 
+-- Journey tracking indexes
+CREATE INDEX IF NOT EXISTS idx_journey_allocation ON allocation_site_journey(allocation_id);
+CREATE INDEX IF NOT EXISTS idx_journey_site ON allocation_site_journey(site_id);
+CREATE INDEX IF NOT EXISTS idx_journey_vehicle ON allocation_site_journey(vehicle_reg);
+CREATE INDEX IF NOT EXISTS idx_journey_timestamp ON allocation_site_journey(timestamp);
+CREATE INDEX IF NOT EXISTS idx_journey_status ON allocation_site_journey(status);
+CREATE INDEX IF NOT EXISTS idx_journey_allocation_site ON allocation_site_journey(allocation_id, site_id);
+CREATE INDEX IF NOT EXISTS idx_journey_tenant_site ON allocation_site_journey(tenant_id, site_id);
+CREATE INDEX IF NOT EXISTS idx_journey_site_status_timestamp ON allocation_site_journey(site_id, status, timestamp);
+
 COMMENT ON TABLE orders IS 'Main orders table containing all order information';
 COMMENT ON TABLE planned_visits IS 'Truck allocations - planned visits linked to orders';
 COMMENT ON TABLE visits IS 'Actual visits at sites (Lions Park or Bulk)';
@@ -471,3 +501,4 @@ COMMENT ON TABLE transporters IS 'Transport companies moving goods - site-specif
 COMMENT ON TABLE drivers IS 'Master driver records with license and induction details - linked to transporters (site access inherited through transporter relationship)';
 COMMENT ON TABLE driver_documents IS 'Uploaded driver documents with OCR results and verification status';
 COMMENT ON TABLE parking_tickets IS 'Parking tickets generated for trucks checking in at Lions Park with comprehensive verification details';
+COMMENT ON TABLE allocation_site_journey IS 'Multi-site journey tracking table - maintains independent status history per site for each allocation';

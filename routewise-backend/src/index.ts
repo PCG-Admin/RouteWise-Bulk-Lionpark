@@ -17,6 +17,8 @@ import freightCompaniesRoutes from './routes/freight-companies';
 import clientsRoutes from './routes/clients';
 import transportersRoutes from './routes/transporters';
 import driversRoutes from './routes/drivers';
+import visitsRoutes from './routes/visits';
+import siteJourneyRoutes from './routes/site-journey';
 import { anprCheckerService } from './services/anpr-checker';
 import { requestLogger, performanceTracker, performanceMetrics } from './middleware/logger';
 import { getCacheStats } from './utils/cache';
@@ -110,6 +112,8 @@ app.use('/api/freight-companies', freightCompaniesRoutes);
 app.use('/api/clients', clientsRoutes);
 app.use('/api/transporters', transportersRoutes);
 app.use('/api/drivers', driversRoutes);
+app.use('/api/visits', visitsRoutes);
+app.use('/api/site-journey', siteJourneyRoutes);
 
 // 404 handler
 app.use((req, res) => {

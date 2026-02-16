@@ -80,6 +80,7 @@ export default function CCTVPage() {
             const formData = new FormData();
             formData.append('image', selectedImage);
             formData.append('direction', uploadDirection);
+            formData.append('siteId', '1'); // Lions Park = site 1
 
             const response = await fetch(`${API_BASE_URL}/api/anpr-mock/manual-upload`, {
                 method: 'POST',
@@ -101,13 +102,19 @@ export default function CCTVPage() {
 
                 const pollForCheckIn = async () => {
                     try {
-                        // Check if the plate matched an allocation and was checked in
-                        const allocResponse = await fetch(`${API_BASE_URL}/api/truck-allocations?vehicleReg=${encodeURIComponent(plate)}`);
-                        const allocResult = await allocResponse.json();
+                        // Check both allocations AND visits for the plate
+                        const [allocResponse, visitsResponse] = await Promise.all([
+                            fetch(`${API_BASE_URL}/api/truck-allocations?vehicleReg=${encodeURIComponent(plate)}`),
+                            fetch(`${API_BASE_URL}/api/visits?plateNumber=${encodeURIComponent(plate)}`)
+                        ]);
 
+                        const allocResult = await allocResponse.json();
+                        const visitsResult = await visitsResponse.json();
+
+                        // Check allocations (matched plates)
                         if (allocResult.success && allocResult.data && allocResult.data.length > 0) {
                             const allocation = allocResult.data.find((a: any) =>
-                                a.vehicleReg.replace(/\s+/g, '').toLowerCase() === plate.toLowerCase()
+                                a.vehicleReg.replace(/\s+/g, '').toLowerCase() === plate.replace(/\s+/g, '').toLowerCase()
                             );
 
                             if (allocation) {
@@ -119,6 +126,18 @@ export default function CCTVPage() {
                                     setUploadResult(`✅ Plate ${plate} detected! Truck departed successfully at ${new Date(allocation.departureTime).toLocaleTimeString()}.`);
                                     return; // Stop polling
                                 }
+                            }
+                        }
+
+                        // Check visits (non-matched plates)
+                        if (visitsResult.success && visitsResult.data && visitsResult.data.length > 0) {
+                            const visit = visitsResult.data.find((v: any) =>
+                                v.vehicleReg?.replace(/\s+/g, '').toLowerCase() === plate.replace(/\s+/g, '').toLowerCase()
+                            );
+
+                            if (visit && visit.status === 'non_matched') {
+                                setUploadResult(`⚠️ Plate ${plate} detected as NON-MATCHED! Created visit record. Check Checked In stage on Loading Board.`);
+                                return; // Stop polling
                             }
                         }
 

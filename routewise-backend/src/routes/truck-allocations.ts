@@ -345,7 +345,7 @@ router.post('/anpr-inject-test', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const tenantId = '1';
-    const { siteId, page = '1', limit = '50' } = req.query;
+    const { siteId, page = '1', limit = '1000' } = req.query;
     const { parkingTickets } = await import('../db/schema');
 
     // Create cache key based on query parameters
@@ -547,6 +547,51 @@ router.put('/:id/status', async (req, res) => {
     // Invalidate cache after status update
     await invalidateCache('truck-allocations:*');
 
+    // Create journey entry for manual status updates (site-aware tracking)
+    try {
+      const { allocationSiteJourney } = await import('../db/schema');
+      const siteId = updated.siteId || 1; // Use allocation's site or default to Lions (1)
+
+      // Only create journey entries for arrival/departure events
+      if (status === 'arrived') {
+        await db.insert(allocationSiteJourney).values({
+          tenantId,
+          allocationId: updated.id,
+          orderId: updated.orderId,
+          siteId,
+          vehicleReg: updated.vehicleReg,
+          driverName: updated.driverName,
+          eventType: 'arrival',
+          status: 'arrived',
+          detectionMethod: 'manual_entry',
+          detectionSource: 'Manual Status Update',
+          timestamp: new Date(),
+        });
+        await invalidateCache(`journey:allocation:${updated.id}`);
+        await invalidateCache(`journey:site:${siteId}`);
+        console.log(`✓ Created journey entry (manual): arrival at site ${siteId} for allocation ${updated.id}`);
+      } else if (status === 'completed') {
+        await db.insert(allocationSiteJourney).values({
+          tenantId,
+          allocationId: updated.id,
+          orderId: updated.orderId,
+          siteId,
+          vehicleReg: updated.vehicleReg,
+          driverName: updated.driverName,
+          eventType: 'departure',
+          status: 'departed',
+          detectionMethod: 'manual_entry',
+          detectionSource: 'Manual Status Update',
+          timestamp: new Date(),
+        });
+        await invalidateCache(`journey:allocation:${updated.id}`);
+        await invalidateCache(`journey:site:${siteId}`);
+        console.log(`✓ Created journey entry (manual): departure from site ${siteId} for allocation ${updated.id}`);
+      }
+    } catch (journeyError) {
+      console.warn(`⚠️ Failed to create journey entry for manual status update (non-critical):`, journeyError);
+    }
+
     // Auto-create parking ticket when truck checks in (arrived)
     if (status === 'arrived') {
       try {
@@ -623,7 +668,26 @@ router.put('/:id/issue-permit', async (req, res) => {
       });
     }
 
-    if (!allocation.status || !['arrived', 'weighing'].includes(allocation.status)) {
+    // Check if truck is checked in (using journey-aware logic)
+    // Check allocation status OR journey status (Modified Option 2: journey entries track check-in)
+    const isCheckedIn = allocation.status && ['arrived', 'weighing'].includes(allocation.status);
+
+    // Also check journey entries to see if truck is checked in at this site
+    const { allocationSiteJourney } = await import('../db/schema');
+    const siteId = allocation.siteId || 1;
+    const latestJourney = await db
+      .select()
+      .from(allocationSiteJourney)
+      .where(and(
+        eq(allocationSiteJourney.allocationId, allocation.id),
+        eq(allocationSiteJourney.siteId, siteId)
+      ))
+      .orderBy(desc(allocationSiteJourney.timestamp))
+      .limit(1);
+
+    const isCheckedInViaJourney = latestJourney.length > 0 && latestJourney[0].status === 'arrived';
+
+    if (!isCheckedIn && !isCheckedInViaJourney) {
       return res.status(400).json({
         success: false,
         error: 'Truck must be checked in before issuing permit',

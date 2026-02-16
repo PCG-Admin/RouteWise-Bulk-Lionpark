@@ -1,8 +1,8 @@
 "use client";
 
-import { X, FileText, User, Truck, Clock, Download, Printer, CheckCircle, AlertCircle } from "lucide-react";
+import { X, FileText, User, Truck, Clock, Download, Printer, CheckCircle, AlertCircle, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 
 interface OrderDetailProps {
     order: any;
@@ -14,6 +14,101 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
     const [activeTab, setActiveTab] = useState("allocation");
     const [parkingTicket, setParkingTicket] = useState<any>(null);
     const [loadingTicket, setLoadingTicket] = useState(true);
+    const [journeyHistory, setJourneyHistory] = useState<any[]>([]);
+
+    // Fetch journey history when order is loaded
+    useEffect(() => {
+        if (order?.id) {
+            const fetchJourneyHistory = async () => {
+                try {
+                    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+                    const response = await fetch(`${API_BASE_URL}/api/site-journey/allocation/${order.id}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.data) {
+                            setJourneyHistory(data.data);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch journey history:', error);
+                }
+            };
+            fetchJourneyHistory();
+        }
+    }, [order?.id]);
+
+    // Debug: Log order data to see what we're working with
+    useEffect(() => {
+        console.log('🔍 Order data for timeline:', {
+            createdAt: order?.createdAt,
+            scheduledDate: order?.scheduledDate,
+            actualArrival: order?.actualArrival,
+            departureTime: order?.departureTime,
+            journeyHistory,
+            fullOrder: order
+        });
+    }, [order, journeyHistory]);
+
+    // Build timeline events - memoized so it recalculates when order or journey changes
+    const timelineEvents = useMemo(() => {
+        const events: any[] = [];
+        console.log('🎯 Building timeline for order:', order);
+
+        if (!order) return events;
+
+        // 1. Order Created
+        if (order.createdAt || order.scheduledDate) {
+            events.push({
+                event: "Order Created",
+                timestamp: order.createdAt || order.scheduledDate,
+                active: true,
+                color: "blue"
+            });
+        }
+
+        // 2. Scheduled for Lions Park
+        if (order.scheduledDate) {
+            events.push({
+                event: "Scheduled for Lions Park",
+                timestamp: order.scheduledDate,
+                active: true,
+                color: "blue"
+            });
+        }
+
+        // 3-4. Process journey history to add check-in and departure events (Lions only - siteId 1)
+        journeyHistory
+            .filter((journey: any) => journey.siteId === 1) // Only show Lions Park events
+            .forEach((journey: any) => {
+                if (journey.eventType === 'arrival' && journey.status === 'arrived') {
+                    events.push({
+                        event: `Checked In at Lions Park Truck Stop`,
+                        timestamp: journey.timestamp,
+                        active: true,
+                        color: "green"
+                    });
+                } else if (journey.eventType === 'departure' && journey.status === 'departed') {
+                    events.push({
+                        event: `Departed Lions Park`,
+                        timestamp: journey.timestamp,
+                        active: true,
+                        color: "purple"
+                    });
+                }
+            });
+
+        // Sort timeline events by timestamp (chronological order)
+        events.sort((a, b) => {
+            if (!a.timestamp) return 1;
+            if (!b.timestamp) return -1;
+            return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+        });
+
+        console.log('📋 Timeline events:', events);
+        console.log('📊 Timeline events count:', events.length);
+
+        return events;
+    }, [order, journeyHistory]);
 
     // Fetch parking ticket data
     useEffect(() => {
@@ -91,6 +186,18 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
                         >
                             <Truck className="w-4 h-4" />
                             Allocation Details
+                        </button>
+                        <button
+                            onClick={() => setActiveTab("details")}
+                            className={cn(
+                                "py-4 text-sm font-medium border-b-2 transition-colors capitalize flex items-center gap-2",
+                                activeTab === "details"
+                                    ? "border-blue-500 text-blue-600"
+                                    : "border-transparent text-slate-500 hover:text-slate-700"
+                            )}
+                        >
+                            <Info className="w-4 h-4" />
+                            Details & Timeline
                         </button>
                         <button
                             onClick={() => setActiveTab("parking-ticket")}
@@ -262,6 +369,8 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
                             </div>
                         </div>
                     )}
+                    </>
+                )}
 
                     {activeTab === "details" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -313,92 +422,68 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
                                 </div>
                             </div>
 
-                            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 md:col-span-2">
-                                <h3 className="font-bold text-slate-900 flex items-center gap-2">
-                                    <Clock className="w-4 h-4 text-slate-400" />
-                                    Timeline
+                            {/* Journey Timeline */}
+                            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden p-6 md:col-span-2">
+                                <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
+                                    <Clock className="w-5 h-5 text-slate-400" />
+                                    Journey Timeline
                                 </h3>
-                                <div className="space-y-3">
-                                    <div>
-                                        <p className="text-xs text-slate-500 uppercase">Created</p>
-                                        <p className="text-sm font-medium text-slate-900">
-                                            {order.createdAt ? new Date(order.createdAt).toLocaleString() : 'N/A'}
-                                        </p>
+
+                                {timelineEvents.length > 0 ? (
+                                    <div className="relative pl-8 space-y-8 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-200">
+                                        {timelineEvents.map((step, i) => {
+                                            const getEventColor = (color: string) => {
+                                                switch (color) {
+                                                    case 'green': return 'border-green-500 text-green-500 bg-green-500';
+                                                    case 'purple': return 'border-purple-500 text-purple-500 bg-purple-500';
+                                                    case 'amber': return 'border-amber-500 text-amber-500 bg-amber-500';
+                                                    default: return 'border-blue-500 text-blue-500 bg-blue-500';
+                                                }
+                                            };
+
+                                            const formatTimestamp = (timestamp: string | null) => {
+                                                if (!timestamp) return "-";
+                                                try {
+                                                    const date = new Date(timestamp);
+                                                    return date.toLocaleString('en-ZA', {
+                                                        day: '2-digit',
+                                                        month: 'short',
+                                                        year: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    });
+                                                } catch {
+                                                    return "-";
+                                                }
+                                            };
+
+                                            return (
+                                                <div key={i} className="relative">
+                                                    <div className={cn(
+                                                        "absolute -left-[29px] top-1 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-white",
+                                                        step.active ? getEventColor(step.color).split(' ')[0] + ' ' + getEventColor(step.color).split(' ')[1] : "border-slate-300 text-slate-300"
+                                                    )}>
+                                                        <div className={cn("w-2 h-2 rounded-full", step.active ? getEventColor(step.color).split(' ')[2] : "bg-transparent")} />
+                                                    </div>
+                                                    <div>
+                                                        <p className={cn("text-sm font-semibold mb-1", step.active ? "text-slate-900" : "text-slate-500")}>
+                                                            {step.event}
+                                                        </p>
+                                                        <p className="text-xs text-slate-600 font-medium">
+                                                            {formatTimestamp(step.timestamp)}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                    {order.scheduledDate && (
-                                        <div>
-                                            <p className="text-xs text-slate-500 uppercase">Scheduled Arrival</p>
-                                            <p className="text-sm font-medium text-slate-900">
-                                                {new Date(order.scheduledDate).toLocaleString('en-ZA', {
-                                                    weekday: 'short',
-                                                    day: '2-digit',
-                                                    month: 'short',
-                                                    year: 'numeric',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit'
-                                                })}
-                                            </p>
-                                        </div>
-                                    )}
-                                    {order.actualArrival && (
-                                        <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                                            <p className="text-xs text-green-600 uppercase font-semibold">✓ Actual Check-In Time</p>
-                                            <p className="text-sm font-bold text-green-800 mt-1">
-                                                {new Date(order.actualArrival).toLocaleString('en-ZA', {
-                                                    weekday: 'short',
-                                                    day: '2-digit',
-                                                    month: 'short',
-                                                    year: 'numeric',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit'
-                                                })}
-                                            </p>
-                                        </div>
-                                    )}
-                                    {order.departureTime && (
-                                        <div className="bg-purple-50 p-3 rounded-lg border border-purple-200">
-                                            <p className="text-xs text-purple-600 uppercase font-semibold">✓ Departure Time</p>
-                                            <p className="text-sm font-bold text-purple-800 mt-1">
-                                                {new Date(order.departureTime).toLocaleString('en-ZA', {
-                                                    weekday: 'short',
-                                                    day: '2-digit',
-                                                    month: 'short',
-                                                    year: 'numeric',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit'
-                                                })}
-                                            </p>
-                                        </div>
-                                    )}
-                                    <div>
-                                        <p className="text-xs text-slate-500 uppercase">Requested Pickup Date</p>
-                                        <p className="text-sm font-medium text-slate-900">
-                                            {order.requestedPickupDate ? new Date(order.requestedPickupDate).toLocaleDateString() : 'N/A'}
-                                        </p>
+                                ) : (
+                                    <div className="text-center py-8 text-slate-500">
+                                        <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                                        <p className="text-sm font-medium">No timeline events available yet</p>
+                                        <p className="text-xs mt-1">Events will appear as the truck progresses through the system</p>
                                     </div>
-                                    <div>
-                                        <p className="text-xs text-slate-500 uppercase">Requested Delivery Date</p>
-                                        <p className="text-sm font-medium text-slate-900">
-                                            {order.requestedDeliveryDate ? new Date(order.requestedDeliveryDate).toLocaleDateString() : 'N/A'}
-                                        </p>
-                                    </div>
-                                    {order.actualPickupDate && (
-                                        <div>
-                                            <p className="text-xs text-slate-500 uppercase">Actual Pickup Date</p>
-                                            <p className="text-sm font-medium text-slate-900">
-                                                {new Date(order.actualPickupDate).toLocaleDateString()}
-                                            </p>
-                                        </div>
-                                    )}
-                                    {order.actualDeliveryDate && (
-                                        <div>
-                                            <p className="text-xs text-slate-500 uppercase">Actual Delivery Date</p>
-                                            <p className="text-sm font-medium text-slate-900">
-                                                {new Date(order.actualDeliveryDate).toLocaleDateString()}
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
+                                )}
                             </div>
 
                             {order.notes && (
@@ -408,8 +493,6 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
                                 </div>
                             )}
                         </div>
-                    )}
-                        </>
                     )}
 
                     {/* Parking Ticket Tab */}

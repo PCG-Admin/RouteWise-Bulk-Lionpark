@@ -46,82 +46,87 @@ function CustomSelect({ label, value, onChange, options, placeholder = "All" }: 
     );
 }
 
-// Helper function to get display status for Bulk Connections view
+// Helper function to get display status for Bulk Connections view (journey-based)
 function getDisplayStatus(allocation: any) {
-    const status = allocation.status?.toLowerCase();
-    const siteId = allocation.siteId;
-    const siteName = allocation.siteName || 'Unknown Site';
+    const lionsJourney = allocation.lionsJourney;
+    const bulkJourney = allocation.bulkJourney;
+    const allocationStatus = allocation.status?.toLowerCase();
 
-    // Check if it's Lions Park by siteId or siteName
-    const isLionsPark = siteId === 1 || siteName?.toLowerCase().includes('lions park');
-
-    console.log('Status mapping:', {
-        vehicleReg: allocation.vehicleReg,
-        status,
-        siteId,
-        siteName,
-        isLionsPark
-    });
-
-    switch (status) {
-        case 'scheduled':
-        case 'in_transit':
+    // Priority: Bulk journey > Lions journey > Allocation status
+    if (bulkJourney) {
+        // Truck has been to Bulk
+        if (bulkJourney.status === 'arrived') {
+            return 'Checked In at Bulk';
+        } else if (bulkJourney.status === 'departed') {
+            return 'Departed from Bulk';
+        }
+    } else if (lionsJourney) {
+        // Truck is at Lions (staging area)
+        if (lionsJourney.status === 'arrived') {
+            return 'Staging at Lions Park';
+        } else if (lionsJourney.status === 'departed') {
+            return 'In Transit to Bulk';
+        }
+    } else {
+        // No journey entries - use allocation status
+        if (allocationStatus === 'scheduled' || allocationStatus === 'in_transit') {
             return 'Scheduled';
-
-        case 'arrived':
-        case 'weighing':
-            // If at Lions Park, show "Staging" (truck is staging at Lions Park)
-            // Otherwise show "Arrived" (truck has arrived at this site)
-            if (isLionsPark) {
-                return 'Staging';
-            }
-            return 'Arrived';
-
-        case 'completed':
-        case 'departed':
-            // Show "Departed [Site Name]"
-            return `Departed ${siteName}`;
-
-        case 'cancelled':
+        } else if (allocationStatus === 'completed') {
+            return 'Completed';
+        } else if (allocationStatus === 'cancelled') {
             return 'Cancelled';
-
-        default:
-            return status || 'Unknown';
+        }
     }
+
+    return allocationStatus || 'Scheduled';
 }
 
-// Helper function to get status color
+// Helper function to get status color (journey-based)
 function getStatusColor(allocation: any) {
-    const status = allocation.status?.toLowerCase();
-    const siteId = allocation.siteId;
-    const siteName = allocation.siteName;
+    const lionsJourney = allocation.lionsJourney;
+    const bulkJourney = allocation.bulkJourney;
 
-    // Check if it's Lions Park by siteId or siteName
-    const isLionsPark = siteId === 1 || siteName?.toLowerCase().includes('lions park');
-
-    switch (status) {
-        case 'scheduled':
-        case 'in_transit':
-            return "bg-amber-50 text-amber-700 border-amber-200";
-
-        case 'arrived':
-        case 'weighing':
-            // Staging at Lions Park or Arrived elsewhere
-            if (isLionsPark) {
-                return "bg-purple-50 text-purple-700 border-purple-200";
-            }
-            return "bg-blue-50 text-blue-700 border-blue-200";
-
-        case 'completed':
-        case 'departed':
-            return "bg-emerald-50 text-emerald-700 border-emerald-200";
-
-        case 'cancelled':
-            return "bg-red-50 text-red-700 border-red-200";
-
-        default:
-            return "bg-slate-50 text-slate-700 border-slate-200";
+    // Priority: Bulk journey > Lions journey > Allocation status
+    if (bulkJourney) {
+        if (bulkJourney.status === 'arrived') {
+            return "bg-emerald-50 text-emerald-700 border-emerald-200"; // Checked in at Bulk
+        } else if (bulkJourney.status === 'departed') {
+            return "bg-purple-50 text-purple-700 border-purple-200"; // Departed from Bulk
+        }
+    } else if (lionsJourney) {
+        if (lionsJourney.status === 'arrived') {
+            return "bg-blue-50 text-blue-700 border-blue-200"; // Staging at Lions
+        } else if (lionsJourney.status === 'departed') {
+            return "bg-amber-50 text-amber-700 border-amber-200"; // In transit to Bulk
+        }
     }
+
+    // Default: Scheduled or unknown
+    return "bg-slate-50 text-slate-700 border-slate-200";
+}
+
+// Helper function to get the most relevant timestamp to display
+function getDisplayTimestamp(allocation: any) {
+    const lionsJourney = allocation.lionsJourney;
+    const bulkJourney = allocation.bulkJourney;
+
+    // Priority: Use the most recent journey timestamp
+    if (bulkJourney?.timestamp) {
+        return new Date(bulkJourney.timestamp);
+    } else if (lionsJourney?.timestamp) {
+        return new Date(lionsJourney.timestamp);
+    } else if (allocation.scheduledDate) {
+        return new Date(allocation.scheduledDate);
+    }
+    return null;
+}
+
+// Helper function to format timestamp with date and time
+function formatTimestamp(date: Date | null) {
+    if (!date) return 'N/A';
+    const dateStr = date.toLocaleDateString();
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${dateStr} ${timeStr}`;
 }
 
 export default function ClientWeighbridgePage() {
@@ -146,10 +151,56 @@ export default function ClientWeighbridgePage() {
         try {
             setLoading(true);
             setError(null);
+
+            // Fetch allocations
             const response = await fetch(`${API_BASE_URL}/truck-allocations`);
             if (!response.ok) throw new Error('Failed to fetch allocations');
             const data = await response.json();
-            setAllocations(data.data || []);
+
+            // Fetch journey data for both sites (Lions + Bulk)
+            const lionsJourneyMap = new Map();
+            const bulkJourneyMap = new Map();
+
+            try {
+                const [lionsJourneyResponse, bulkJourneyResponse] = await Promise.all([
+                    fetch(`${API_BASE_URL}/site-journey/site/1/latest`),
+                    fetch(`${API_BASE_URL}/site-journey/site/2/latest`)
+                ]);
+
+                if (lionsJourneyResponse.ok) {
+                    const lionsJourneyData = await lionsJourneyResponse.json();
+                    if (lionsJourneyData?.success && lionsJourneyData.data) {
+                        lionsJourneyData.data.forEach((journey: any) => {
+                            lionsJourneyMap.set(journey.allocationId, journey);
+                        });
+                    }
+                }
+
+                if (bulkJourneyResponse.ok) {
+                    const bulkJourneyData = await bulkJourneyResponse.json();
+                    if (bulkJourneyData?.success && bulkJourneyData.data) {
+                        bulkJourneyData.data.forEach((journey: any) => {
+                            bulkJourneyMap.set(journey.allocationId, journey);
+                        });
+                    }
+                }
+            } catch (journeyError) {
+                console.warn('Journey data fetch failed (non-critical):', journeyError);
+            }
+
+            // Merge journey data with allocations
+            const allocationsWithJourney = (data.data || []).map((allocation: any) => {
+                const lionsJourney = lionsJourneyMap.get(allocation.id);
+                const bulkJourney = bulkJourneyMap.get(allocation.id);
+
+                return {
+                    ...allocation,
+                    lionsJourney,
+                    bulkJourney,
+                };
+            });
+
+            setAllocations(allocationsWithJourney);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -370,7 +421,7 @@ export default function ClientWeighbridgePage() {
                                 <td className="px-6 py-4">
                                     <div className="font-bold text-blue-600">{allocation.ticketNo || 'N/A'}</div>
                                     <div className="text-xs text-slate-400">
-                                        {allocation.scheduledDate && new Date(allocation.scheduledDate).toLocaleDateString()}
+                                        {formatTimestamp(getDisplayTimestamp(allocation))}
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 font-bold text-slate-800">{allocation.customer || 'N/A'}</td>

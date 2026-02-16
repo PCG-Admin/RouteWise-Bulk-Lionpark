@@ -2,7 +2,7 @@
 
 import { X, FileText, User, Truck, Clock, ShieldCheck, MapPin, AlertCircle, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface VisitDetailProps {
     truck: any;
@@ -13,43 +13,31 @@ interface VisitDetailProps {
 export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDetailProps) {
     const [activeTab, setActiveTab] = useState("overview");
     const [isUpdating, setIsUpdating] = useState(false);
+    const [journeyHistory, setJourneyHistory] = useState<any[]>([]);
 
-    // Early return if no truck
-    if (!truck) return null;
-
-    const stages = [
-        { value: "staging", label: "Staging", color: "amber", status: "arrived" },
-        { value: "pending_arrival", label: "Pending Arrival", color: "blue", status: "completed" },
-        { value: "checked_in", label: "Checked In", color: "emerald", status: "bulks_arrived" },
-        { value: "departed", label: "Departed", color: "purple", status: "bulks_departed" }
-    ];
-
-    const currentStage = truck.stage || 'staging';
-
-    const handleStageChange = async (newStage: string) => {
-        const targetStage = stages.find(s => s.value === newStage);
-        if (!targetStage || !truck.id) return;
-
-        setIsUpdating(true);
-        try {
-            const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
-            const response = await fetch(`${API_BASE_URL}/api/truck-allocations/${truck.id}/status`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: targetStage.status })
-            });
-
-            if (!response.ok) throw new Error('Failed to update stage');
-
-            if (onStageChange) onStageChange();
-            onClose();
-        } catch (error) {
-            console.error('Error updating stage:', error);
-            alert('Failed to update truck stage. Please try again.');
-        } finally {
-            setIsUpdating(false);
+    // Fetch complete journey history when truck is selected
+    useEffect(() => {
+        if (truck?.id) {
+            const fetchJourneyHistory = async () => {
+                try {
+                    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+                    const response = await fetch(`${API_BASE_URL}/api/site-journey/allocation/${truck.id}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.data) {
+                            setJourneyHistory(data.data);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch journey history:', error);
+                }
+            };
+            fetchJourneyHistory();
         }
-    };
+    }, [truck?.id]);
+
+    // Early return if no truck (after all hooks)
+    if (!truck) return null;
 
     return (
         <div className="fixed inset-0 z-[100] flex justify-end">
@@ -119,38 +107,6 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                                     <p className="text-xs font-semibold text-emerald-500 uppercase">Product</p>
                                     <p className="text-lg font-bold text-emerald-600 mt-1">{truck.product || 'N/A'}</p>
                                 </div>
-                            </div>
-
-                            {/* Stage Movement */}
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                <h3 className="font-bold text-slate-900 flex items-center gap-2 mb-4">
-                                    <ArrowRight className="w-4 h-4 text-slate-400" />
-                                    Move to Stage
-                                </h3>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {stages.map((stage) => (
-                                        <button
-                                            key={stage.value}
-                                            onClick={() => handleStageChange(stage.value)}
-                                            disabled={currentStage === stage.value || isUpdating}
-                                            className={cn(
-                                                "px-3 py-2.5 rounded-lg font-medium text-sm transition-all",
-                                                currentStage === stage.value
-                                                    ? `bg-${stage.color}-100 text-${stage.color}-700 border-2 border-${stage.color}-500 cursor-default`
-                                                    : "bg-slate-100 text-slate-700 border-2 border-transparent hover:bg-slate-200 hover:border-slate-300",
-                                                isUpdating && "opacity-50 cursor-not-allowed"
-                                            )}
-                                        >
-                                            {stage.label}
-                                            {currentStage === stage.value && (
-                                                <span className={cn("block text-xs mt-1", `text-${stage.color}-600`)}>Current</span>
-                                            )}
-                                        </button>
-                                    ))}
-                                </div>
-                                {isUpdating && (
-                                    <p className="text-xs text-blue-600 mt-2 text-center">Updating stage...</p>
-                                )}
                             </div>
 
                             {/* Truck Allocation Details */}
@@ -396,79 +352,43 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                             });
                         }
 
-                        // 3. Checked in at Lions Park (when truck has actualArrival and was at siteId 1)
-                        if (truck.actualArrival) {
-                            const siteName = truck.siteName || 'Lions Park';
-                            timelineEvents.push({
-                                event: `Checked In at ${siteName}`,
-                                timestamp: truck.actualArrival,
-                                active: true,
-                                color: "green"
-                            });
-                        }
+                        // 3-6. Process journey history to add all site events
+                        journeyHistory.forEach((journey: any) => {
+                            const siteName = journey.siteId === 1 ? 'Lions Park' : journey.siteId === 2 ? 'Bulk Connections' : `Site ${journey.siteId}`;
 
-                        // 4. Driver verification completed (if we have that data)
-                        // Note: This would need to be added to the truck data from backend
-
-                        // 5. Departed from Lions Park (when stage >= pending_arrival)
-                        if (truck.departureTime && (truck.stage === 'pending_arrival' || truck.stage === 'checked_in' || truck.stage === 'departed')) {
-                            timelineEvents.push({
-                                event: "Departed Lions Park",
-                                timestamp: truck.departureTime,
-                                active: true,
-                                color: "purple"
-                            });
-                        }
-
-                        // 6. Checked in at Bulk Connections (when stage is checked_in or departed)
-                        if (truck.stage === 'checked_in' || truck.stage === 'departed') {
-                            // If we have a separate bulkArrival timestamp, use it; otherwise estimate based on stage
-                            const bulkArrivalTime = truck.bulkArrival || (truck.stage === 'checked_in' ? new Date().toISOString() : null);
-                            if (bulkArrivalTime) {
+                            if (journey.eventType === 'arrival' && journey.status === 'arrived') {
                                 timelineEvents.push({
-                                    event: "Checked In at Bulk Connections",
-                                    timestamp: bulkArrivalTime,
+                                    event: `Checked In at ${siteName}${journey.siteId === 1 ? ' Truck Stop' : ''}`,
+                                    timestamp: journey.timestamp,
                                     active: true,
                                     color: "green"
                                 });
-                            }
-                        }
-
-                        // 7. Weighbridge operations
-                        if (truck.stage === 'checked_in' || truck.stage === 'departed') {
-                            if (truck.grossWeight || truck.tareWeight) {
+                            } else if (journey.eventType === 'departure' && journey.status === 'departed') {
                                 timelineEvents.push({
-                                    event: "Weighbridge Completed",
-                                    timestamp: truck.weighbridgeTime || null,
-                                    active: true,
-                                    color: "blue"
-                                });
-                            }
-                        }
-
-                        // 8. Loading operations
-                        if (truck.stage === 'departed' || (truck.stage === 'checked_in' && truck.netWeight)) {
-                            timelineEvents.push({
-                                event: "Loading Completed",
-                                timestamp: truck.loadingCompletedTime || null,
-                                active: !!(truck.netWeight),
-                                color: "amber"
-                            });
-                        }
-
-                        // 9. Departed from Bulk (final stage)
-                        if (truck.stage === 'departed') {
-                            // Use departureTime only if we're in the final departed stage and have left Bulk
-                            const finalDepartureTime = truck.bulkDepartureTime || truck.finalDepartureTime;
-                            if (finalDepartureTime) {
-                                timelineEvents.push({
-                                    event: "Departed Bulk Connections",
-                                    timestamp: finalDepartureTime,
+                                    event: `Departed ${siteName === 'Bulk Connections' ? 'from' : ''} ${siteName}`,
+                                    timestamp: journey.timestamp,
                                     active: true,
                                     color: "purple"
                                 });
                             }
+                        });
+
+                        // 7. Loading Completed (placeholder for future)
+                        if (truck.stage === 'departed' && truck.netWeight) {
+                            timelineEvents.push({
+                                event: "Loading Completed",
+                                timestamp: null,
+                                active: false,
+                                color: "amber"
+                            });
                         }
+
+                        // Sort timeline events by timestamp (chronological order)
+                        timelineEvents.sort((a, b) => {
+                            if (!a.timestamp) return 1; // Put null timestamps at the end
+                            if (!b.timestamp) return -1;
+                            return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+                        });
 
                         // Format timestamp helper
                         const formatTimestamp = (timestamp: string | null) => {

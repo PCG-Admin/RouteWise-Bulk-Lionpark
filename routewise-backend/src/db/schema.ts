@@ -197,6 +197,7 @@ export const plannedVisits = pgTable('planned_visits', {
   scheduledArrival: timestamp('scheduled_arrival').notNull(),
   estimatedArrival: timestamp('estimated_arrival'),
   actualArrival: timestamp('actual_arrival'),
+  departureTime: timestamp('departure_time'),
 
   // Status
   status: varchar('status', { length: 20 }).default('scheduled'),
@@ -272,6 +273,50 @@ export const truckAllocations = pgTable('truck_allocations', {
   tenantOrderIdx: index('allocations_tenant_order_idx').on(table.tenantId, table.orderId),
   tenantSiteIdx: index('allocations_tenant_site_idx').on(table.tenantId, table.siteId),
   tenantStatusIdx: index('allocations_tenant_status_idx').on(table.tenantId, table.status),
+}));
+
+// Allocation Site Journey table - tracks truck journey across multiple sites
+export const allocationSiteJourney = pgTable('allocation_site_journey', {
+  id: serial('id').primaryKey(),
+  tenantId: varchar('tenant_id', { length: 50 }).notNull(),
+
+  // References
+  allocationId: integer('allocation_id').references(() => truckAllocations.id).notNull(),
+  orderId: integer('order_id').references(() => orders.id),
+  siteId: integer('site_id').references(() => sites.id).notNull(), // Which site this status applies to
+
+  // Vehicle info (denormalized for performance)
+  vehicleReg: varchar('vehicle_reg', { length: 50 }).notNull(),
+  driverName: varchar('driver_name', { length: 100 }),
+
+  // Journey tracking
+  eventType: varchar('event_type', { length: 20 }).notNull(), // 'arrival', 'departure', 'check_in', 'check_out'
+  status: varchar('status', { length: 20 }).notNull(), // 'scheduled', 'arrived', 'departed', 'completed'
+  timestamp: timestamp('timestamp').defaultNow().notNull(),
+
+  // Detection method
+  detectionMethod: varchar('detection_method', { length: 20 }), // 'anpr_auto', 'manual_upload', 'manual_entry', 'system'
+  detectionSource: varchar('detection_source', { length: 100 }), // camera name, user, etc.
+
+  // Optional data
+  notes: text('notes'),
+  metadata: jsonb('metadata'), // Store additional context (OCR confidence, image path, etc.)
+
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+  // Indexes for performance
+  allocationIdx: index('journey_allocation_idx').on(table.allocationId),
+  siteIdx: index('journey_site_idx').on(table.siteId),
+  vehicleIdx: index('journey_vehicle_idx').on(table.vehicleReg),
+  timestampIdx: index('journey_timestamp_idx').on(table.timestamp),
+  statusIdx: index('journey_status_idx').on(table.status),
+  // Composite indexes for common queries
+  allocationSiteIdx: index('journey_allocation_site_idx').on(table.allocationId, table.siteId),
+  tenantSiteIdx: index('journey_tenant_site_idx').on(table.tenantId, table.siteId),
+  tenantStatusIdx: index('journey_tenant_status_idx').on(table.tenantId, table.status),
+  // For latest status per site queries
+  siteStatusTimestampIdx: index('journey_site_status_timestamp_idx').on(table.siteId, table.status, table.timestamp),
 }));
 
 // Type exports
@@ -361,7 +406,8 @@ export const driverDocuments = pgTable('driver_documents', {
 export const parkingTickets = pgTable('parking_tickets', {
   id: serial('id').primaryKey(),
   tenantId: varchar('tenant_id', { length: 50 }).notNull(),
-  truckAllocationId: integer('truck_allocation_id').references(() => truckAllocations.id).notNull(),
+  truckAllocationId: integer('truck_allocation_id').references(() => truckAllocations.id), // Nullable - can be null for non-matched visits
+  visitId: integer('visit_id').references(() => plannedVisits.id), // For non-matched visits
 
   // Ticket identification
   ticketNumber: varchar('ticket_number', { length: 50 }).notNull().unique(), // Format: PT-YYYY-NNNNNN
@@ -426,6 +472,7 @@ export type PlannedVisit = typeof plannedVisits.$inferSelect;
 export type TruckAllocation = typeof truckAllocations.$inferSelect;
 export type Driver = typeof drivers.$inferSelect;
 export type DriverDocument = typeof driverDocuments.$inferSelect;
+export type AllocationSiteJourney = typeof allocationSiteJourney.$inferSelect;
 
 export type NewOrder = typeof orders.$inferInsert;
 export type NewFreightCompany = typeof freightCompanies.$inferInsert;
@@ -435,5 +482,6 @@ export type NewTransporter = typeof transporters.$inferInsert;
 export type NewTruckAllocation = typeof truckAllocations.$inferInsert;
 export type NewDriver = typeof drivers.$inferInsert;
 export type NewDriverDocument = typeof driverDocuments.$inferInsert;
+export type NewAllocationSiteJourney = typeof allocationSiteJourney.$inferInsert;
 export type ParkingTicket = typeof parkingTickets.$inferSelect;
 export type NewParkingTicket = typeof parkingTickets.$inferInsert;

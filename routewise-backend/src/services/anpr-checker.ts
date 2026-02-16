@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { truckAllocations, parkingTickets, orders, clients, transporters } from '../db/schema';
+import { truckAllocations, parkingTickets, orders, clients, transporters, plannedVisits, allocationSiteJourney } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { invalidateCache } from '../utils/cache';
 
@@ -170,7 +170,7 @@ class ANPRCheckerService {
       console.log(`🔍 Checking plate ${detection.plateNumber} (normalized: ${plateNumber})`);
       console.log(`   Direction: ${detection.direction}, Camera: ${detection.cameraType}`);
 
-      // Find matching truck allocation
+      // Find matching truck allocation (don't filter by site - trucks visit multiple sites)
       const allocations = await db
         .select()
         .from(truckAllocations)
@@ -180,10 +180,10 @@ class ANPRCheckerService {
       let matchedAllocation;
 
       if (detection.direction === 'entry') {
-        // Entry: Look for scheduled trucks
+        // Entry: Look for scheduled or in-transit trucks
         matchedAllocation = allocations.find(a =>
           this.normalizePlateNumber(a.vehicleReg) === plateNumber &&
-          a.status === 'scheduled'
+          (a.status === 'scheduled' || a.status === 'in_transit')
         );
       } else {
         // Exit: Look for trucks with ready_for_dispatch driver validation status
@@ -197,62 +197,170 @@ class ANPRCheckerService {
         console.log(`✅ MATCH FOUND! Allocation ID: ${matchedAllocation.id}, Order: ${matchedAllocation.orderId}`);
         console.log(`   Current status: ${matchedAllocation.status}`);
 
-        // Determine target status based on detection direction and current status
-        let targetStatus: string;
+        // Get site ID from detection (manual upload) or environment variable
+        const siteId = (detection as any).siteId || parseInt(process.env.SITE_ID || '1');
+        const eventType = detection.direction === 'entry' ? 'arrival' : 'departure';
+        const journeyStatus = detection.direction === 'entry' ? 'arrived' : 'departed';
+
+        console.log(`   Site: ${siteId}, Direction: ${detection.direction}, Event: ${eventType}`);
+
+        // MODIFIED OPTION 2: Journey-based status logic
+        // - Entry anywhere: Only create journey entry, don't update allocation.status
+        // - Exit from Lions (site 1): Update allocation.status = 'in_transit'
+        // - Exit from Bulk (site 2): Update allocation.status = 'completed'
+
+        let shouldUpdateAllocationStatus = false;
+        let allocationStatusUpdate: any = null;
 
         if (detection.direction === 'entry') {
-          // Entry detection: scheduled → arrived
-          if (matchedAllocation.status === 'scheduled') {
-            targetStatus = 'arrived';
-          } else {
-            console.log(`   Already checked in, skipping`);
-            return false;
-          }
+          // Entry detection: Just create journey entry, don't update allocation status
+          console.log(`   Entry detected - creating journey entry only (no allocation status update)`);
+          shouldUpdateAllocationStatus = false;
         } else {
-          // Exit detection: driverValidationStatus ready_for_dispatch → completed
-          if (matchedAllocation.driverValidationStatus === 'ready_for_dispatch') {
-            targetStatus = 'completed';
-          } else {
-            console.log(`   Not ready for dispatch, skipping`);
+          // Exit detection: Check driver validation and update allocation status based on site
+          if (matchedAllocation.driverValidationStatus !== 'ready_for_dispatch') {
+            console.log(`   Not ready for dispatch (status: ${matchedAllocation.driverValidationStatus}), skipping`);
             return false;
+          }
+
+          if (siteId === 1) {
+            // Exit from Lions → in_transit (truck traveling to Bulk)
+            allocationStatusUpdate = {
+              status: 'in_transit',
+              departureTime: new Date(detection.detectedAt),
+              updatedAt: new Date(),
+            };
+            shouldUpdateAllocationStatus = true;
+            console.log(`   Exit from Lions (site 1) - setting allocation status to 'in_transit'`);
+          } else if (siteId === 2) {
+            // Exit from Bulk → completed (final delivery)
+            allocationStatusUpdate = {
+              status: 'completed',
+              departureTime: new Date(detection.detectedAt),
+              updatedAt: new Date(),
+            };
+            shouldUpdateAllocationStatus = true;
+            console.log(`   Exit from Bulk (site 2) - setting allocation status to 'completed'`);
           }
         }
 
-        // Update allocation status
-        const updateData: any = {
-          status: targetStatus,
-          updatedAt: new Date(),
-        };
+        // Update allocation status only if needed (exits only)
+        if (shouldUpdateAllocationStatus && allocationStatusUpdate) {
+          await db
+            .update(truckAllocations)
+            .set(allocationStatusUpdate)
+            .where(eq(truckAllocations.id, matchedAllocation.id));
 
-        if (targetStatus === 'arrived') {
-          updateData.actualArrival = new Date(detection.detectedAt);
+          await invalidateCache('truck-allocations:*');
+          console.log(`✓ Updated allocation ${matchedAllocation.id} status to '${allocationStatusUpdate.status}'`);
         }
 
-        if (targetStatus === 'completed') {
-          updateData.departureTime = new Date(detection.detectedAt);
+        // Create journey entry for site-aware tracking (non-blocking)
+        try {
+          await db.insert(allocationSiteJourney).values({
+            tenantId,
+            allocationId: matchedAllocation.id,
+            orderId: matchedAllocation.orderId,
+            siteId,
+            vehicleReg: matchedAllocation.vehicleReg,
+            driverName: matchedAllocation.driverName,
+            eventType,
+            status: journeyStatus,
+            detectionMethod: 'anpr_auto',
+            detectionSource: `ANPR Camera ${plateNumber}`,
+            timestamp: new Date(detection.detectedAt),
+          });
+
+          await invalidateCache(`journey:allocation:${matchedAllocation.id}`);
+          await invalidateCache(`journey:site:${siteId}`);
+          console.log(`✓ Created journey entry: ${eventType} at site ${siteId} for allocation ${matchedAllocation.id}`);
+        } catch (journeyError) {
+          console.warn(`⚠️ Failed to create journey entry (non-critical):`, journeyError);
+          // Don't fail the whole check-in process if journey tracking fails
         }
 
-        await db
-          .update(truckAllocations)
-          .set(updateData)
-          .where(eq(truckAllocations.id, matchedAllocation.id));
-
-        // Invalidate cache after ANPR auto check-in/departure
-        await invalidateCache('truck-allocations:*');
-
-        console.log(`🚚 Vehicle ${matchedAllocation.vehicleReg} (ID: ${matchedAllocation.id}) → ${targetStatus}`);
+        console.log(`🚚 Vehicle ${matchedAllocation.vehicleReg} (ID: ${matchedAllocation.id})`);
         console.log(`   ${detection.direction === 'entry' ? 'CHECK-IN' : 'DEPARTURE'} via ANPR at ${detection.detectedAt}`);
 
-        // Auto-create parking ticket on check-in (entry)
-        if (detection.direction === 'entry' && targetStatus === 'arrived') {
+        // Auto-create parking ticket on check-in at Lions (site 1 entry only)
+        if (detection.direction === 'entry' && siteId === 1) {
           await this.createParkingTicket(matchedAllocation.id, tenantId, new Date(detection.detectedAt));
+          console.log(`   🎫 Parking ticket creation triggered for Lions Park check-in`);
         }
 
         return true;
       } else {
-        console.log(`⚠️  No match found for plate ${plateNumber}`);
+        // No match found in allocations - check plannedVisits for exit, or create new visit for entry
+        console.log(`⚠️  No match found in allocations for plate ${plateNumber}`);
         console.log(`   Checked against ${allocations.length} allocations`);
-        return false;
+
+        if (detection.direction === 'entry') {
+          // Entry: Create non-matched visit
+          console.log(`   Creating non-matched visit record...`);
+          await this.createNonMatchedAllocation(detection, tenantId);
+          return true;
+        } else {
+          // Exit: Check if there's a non-matched visit that needs to depart
+          console.log(`   Checking for non-matched plannedVisits...`);
+
+          // Find ALL plannedVisits with status='arrived' for this tenant
+          const matchedVisits = await db
+            .select()
+            .from(plannedVisits)
+            .where(and(
+              eq(plannedVisits.tenantId, tenantId),
+              eq(plannedVisits.status, 'arrived')
+            ));
+
+          // Filter by plate and sort by arrival time (most recent first)
+          const matchingPlateVisits = matchedVisits
+            .filter(v => this.normalizePlateNumber(v.plateNumber) === plateNumber)
+            .sort((a, b) => {
+              const aTime = a.actualArrival ? new Date(a.actualArrival).getTime() : 0;
+              const bTime = b.actualArrival ? new Date(b.actualArrival).getTime() : 0;
+              return bTime - aTime; // Most recent first
+            });
+
+          const matchedVisit = matchingPlateVisits[0]; // Get the most recent one
+
+          if (matchedVisit) {
+            console.log(`✅ VISIT MATCH FOUND! Visit ID: ${matchedVisit.id}, Plate: ${matchedVisit.plateNumber}`);
+
+            try {
+              console.log(`   Step 1: Preparing to update visit ${matchedVisit.id}...`);
+
+              // Update visit to departed status with departure timestamp
+              await db
+                .update(plannedVisits)
+                .set({
+                  status: 'completed',
+                  departureTime: new Date(detection.detectedAt),
+                  updatedAt: new Date(),
+                })
+                .where(eq(plannedVisits.id, matchedVisit.id));
+
+              console.log(`   Step 2: Visit updated successfully in database`);
+
+              // Invalidate cache
+              console.log(`   Step 3: Invalidating cache...`);
+              await invalidateCache('visits:*');
+              await invalidateCache('truck-allocations:*');
+
+              console.log(`   Step 4: Cache invalidated successfully`);
+              console.log(`🚚 Non-matched visit ${matchedVisit.plateNumber} (ID: ${matchedVisit.id}) → completed (departed)`);
+              console.log(`   DEPARTURE via ANPR at ${detection.detectedAt}`);
+
+              return true;
+            } catch (updateError: any) {
+              console.error(`❌ ERROR in visit update process:`, updateError.message);
+              console.error(`   Full error:`, updateError);
+              throw updateError; // Re-throw to be caught by outer catch
+            }
+          }
+
+          console.log(`   No matching visit found for exit`);
+          return false;
+        }
       }
 
     } catch (error: any) {
@@ -430,6 +538,104 @@ class ANPRCheckerService {
       console.log(`   🎫 Parking ticket ${ticketNumber} created automatically for allocation ${allocationId}`);
     } catch (error: any) {
       console.error(`   ❌ Failed to create parking ticket for allocation ${allocationId}:`, error.message);
+    }
+  }
+
+  /**
+   * Create a non-matched visit record for plates detected without scheduled allocation
+   */
+  private async createNonMatchedAllocation(detection: ANPRPlateDetection, tenantId: string): Promise<void> {
+    try {
+      const siteId = parseInt(process.env.SITE_ID || '1');
+
+      // Create non-matched visit with 'arrived' status (Checked In on loading board)
+      // The verification status will be 'non_matched' to indicate it's an unplanned visit
+      const [newVisit] = await db.insert(plannedVisits).values({
+        tenantId,
+        orderId: null, // No order linked
+        siteId,
+        plateNumber: detection.plateNumber,
+        driverName: 'Unknown', // Required field - unknown for non-matched plates
+        status: 'arrived', // Checked In status for loading board
+        actualArrival: new Date(detection.detectedAt),
+        scheduledArrival: new Date(detection.detectedAt),
+        specialInstructions: `ANPR detected plate without scheduled allocation. Detected at ${detection.detectedAt} via ${detection.cameraType}`,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }).returning();
+
+      console.log(`   ⚠️  Non-matched visit created (ID: ${newVisit.id})`);
+      console.log(`   Plate: ${detection.plateNumber} | Status: arrived (Non-Matched)`);
+
+      // Create parking ticket for non-matched visit
+      await this.createParkingTicketForVisit(newVisit.id, tenantId, new Date(detection.detectedAt), detection.plateNumber);
+
+      // Invalidate cache after creating non-matched visit
+      await invalidateCache('truck-allocations:*');
+      await invalidateCache('visits:*');
+
+    } catch (error: any) {
+      console.error(`   ❌ Failed to create non-matched visit for plate ${detection.plateNumber}:`, error.message);
+    }
+  }
+
+  /**
+   * Create parking ticket for non-matched visit
+   */
+  private async createParkingTicketForVisit(visitId: number, tenantId: string, arrivalTime: Date, plateNumber: string): Promise<void> {
+    try {
+      // Check if parking ticket already exists for this visit
+      const existingTicket = await db
+        .select()
+        .from(parkingTickets)
+        .where(and(
+          eq(parkingTickets.visitId, visitId),
+          eq(parkingTickets.tenantId, tenantId)
+        ))
+        .limit(1);
+
+      if (existingTicket.length > 0) {
+        console.log(`   ⚠️  Parking ticket already exists for visit ${visitId}`);
+        return;
+      }
+
+      // Generate ticket number
+      const year = new Date().getFullYear();
+      const prefix = `PT-${year}-`;
+
+      const latestTickets = await db
+        .select({ ticketNumber: parkingTickets.ticketNumber })
+        .from(parkingTickets)
+        .where(eq(parkingTickets.tenantId, tenantId))
+        .orderBy(desc(parkingTickets.ticketNumber))
+        .limit(1);
+
+      let sequence = 1;
+      if (latestTickets.length > 0 && latestTickets[0].ticketNumber.startsWith(prefix)) {
+        const lastNumber = latestTickets[0].ticketNumber.replace(prefix, '');
+        sequence = parseInt(lastNumber) + 1;
+      }
+
+      const ticketNumber = `${prefix}${sequence.toString().padStart(6, '0')}`;
+
+      // Create parking ticket for visit
+      await db.insert(parkingTickets).values({
+        tenantId,
+        visitId: visitId, // Link to visit instead of allocation
+        ticketNumber,
+        arrivalDatetime: arrivalTime,
+        personOnDuty: 'ANPR System',
+        terminalNumber: '1',
+        vehicleReg: plateNumber,
+        status: 'pending',
+        reference: 'Non-Matched Visit',
+        remarks: 'Non-Matched Plate - No Scheduled Allocation',
+        freightCompanyName: 'Unknown',
+      });
+
+      console.log(`   🎫 Parking ticket ${ticketNumber} created for non-matched visit ${visitId}`);
+    } catch (error: any) {
+      console.error(`   ❌ Failed to create parking ticket for visit ${visitId}:`, error.message);
     }
   }
 }

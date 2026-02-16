@@ -14,10 +14,11 @@ type Stage = "pending_arrival" | "checked_in" | "departed";
 // Sync Rules:
 // - Lionspark "Checked In" = Bulk "Staging"
 // - Lionspark "Departed" = Bulk "Pending Arrival"
+// Note: Non-matched plates (detected by ANPR without allocation) use status='arrived' and driverValidationStatus='non_matched'
 const stages: { id: Stage; title: string; color: string; icon: any; statuses: string[] }[] = [
     { id: "pending_arrival", title: "Pending Arrival", color: "text-blue-500", icon: Clock, statuses: ['scheduled', 'in_transit'] },
     { id: "checked_in", title: "Checked In", color: "text-green-500", icon: CheckCircle, statuses: ['arrived', 'weighing'] },
-    { id: "departed", title: "Departed", color: "text-purple-500", icon: Truck, statuses: ['completed', 'cancelled'] },
+    { id: "departed", title: "Departed", color: "text-purple-500", icon: Truck, statuses: ['departed', 'completed', 'cancelled'] },
 ];
 
 export default function LoadingBoardPage() {
@@ -30,18 +31,81 @@ export default function LoadingBoardPage() {
     const [expandedStage, setExpandedStage] = useState<Stage | null>(null);
     const [showManualEntry, setShowManualEntry] = useState(false);
 
-    // Fetch truck allocations
+    // Fetch truck allocations and non-matched visits
     const fetchAllocations = async () => {
         try {
             // Filter by site ID for Lions Park (only show allocations for this site)
-            const url = SITE_ID
+            const allocationsUrl = SITE_ID
                 ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}`
                 : `${API_BASE_URL}/api/truck-allocations`;
-            const response = await fetch(url);
-            const data = await response.json();
-            if (data.success) {
-                setAllocations(data.data || []);
+
+            const visitsUrl = SITE_ID
+                ? `${API_BASE_URL}/api/visits?siteId=${SITE_ID}`
+                : `${API_BASE_URL}/api/visits`;
+
+            const journeyUrl = SITE_ID
+                ? `${API_BASE_URL}/api/site-journey/site/${SITE_ID}/latest`
+                : null;
+
+            // Fetch allocations and visits
+            const [allocationsResponse, visitsResponse] = await Promise.all([
+                fetch(allocationsUrl),
+                fetch(visitsUrl)
+            ]);
+
+            const allocationsData = await allocationsResponse.json();
+            const visitsData = await visitsResponse.json();
+
+            // Try to fetch journey data (non-blocking - if it fails, continue without it)
+            const journeyMap = new Map();
+            if (journeyUrl) {
+                try {
+                    const journeyResponse = await fetch(journeyUrl);
+                    if (journeyResponse.ok) {
+                        const journeyData = await journeyResponse.json();
+                        if (journeyData?.success && journeyData.data) {
+                            journeyData.data.forEach((journey: any) => {
+                                journeyMap.set(journey.allocationId, {
+                                    siteStatus: journey.status,
+                                    lastEvent: journey.eventType,
+                                    lastUpdated: journey.timestamp,
+                                });
+                            });
+                        }
+                    }
+                } catch (journeyError) {
+                    console.warn('Journey data fetch failed (non-critical):', journeyError);
+                    // Continue without journey data
+                }
             }
+
+            // Merge journey status with allocations
+            // LIONS VIEW: Only show allocations that have visited Lions (have journey entry)
+            const allocationsWithJourney = (allocationsData.success ? allocationsData.data : [])
+                .map((alloc: any) => {
+                    const journey = journeyMap.get(alloc.id);
+                    return {
+                        ...alloc,
+                        siteStatus: journey?.siteStatus || alloc.status, // Use journey status if available
+                        lastEvent: journey?.lastEvent,
+                        lastUpdated: journey?.lastUpdated || alloc.updatedAt,
+                        lionsTimestamp: journey?.timestamp, // Add Lions-specific timestamp
+                        hasJourneyEntry: !!journey, // Track if allocation has journey entry
+                    };
+                })
+                .filter((alloc: any) => {
+                    // Lions only sees allocations that have visited Lions (have journey entry at site 1)
+                    // OR allocations specifically assigned to Lions (siteId = 1)
+                    return alloc.hasJourneyEntry || alloc.siteId === 1;
+                });
+
+            // Combine allocations and visits
+            const combined = [
+                ...allocationsWithJourney,
+                ...(visitsData.success ? visitsData.data : [])
+            ];
+
+            setAllocations(combined);
         } catch (error) {
             console.error('Failed to fetch truck allocations:', error);
         } finally {
@@ -109,9 +173,11 @@ export default function LoadingBoardPage() {
     const getTrucksByStage = (stage: Stage) => {
         const stageConfig = stages.find(s => s.id === stage);
         if (!stageConfig) return [];
-        return filteredAllocations.filter(allocation =>
-            stageConfig.statuses.includes(allocation.status?.toLowerCase() || 'scheduled')
-        );
+        return filteredAllocations.filter(allocation => {
+            // Use siteStatus (from journey table) if available, otherwise fall back to status
+            const effectiveStatus = allocation.siteStatus || allocation.status;
+            return stageConfig.statuses.includes(effectiveStatus?.toLowerCase() || 'scheduled');
+        });
     };
 
     const clearFilters = () => {
@@ -502,16 +568,35 @@ export default function LoadingBoardPage() {
                                     <div
                                         key={allocation.id}
                                         onClick={() => setSelectedTruck(allocation)}
-                                        className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-pointer group relative h-fit"
+                                        className={cn(
+                                            "bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-pointer group relative h-fit",
+                                            allocation.driverValidationStatus === 'non_matched'
+                                                ? "border-2 border-red-500"
+                                                : "border border-slate-200"
+                                        )}
                                     >
-                                        {/* Status Dot */}
-                                        <div className="absolute top-3 right-3 text-blue-500">
-                                            <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                        </div>
+                                        {/* Status Indicator */}
+                                        {allocation.driverValidationStatus === 'non_matched' ? (
+                                            <div className="absolute top-3 right-3">
+                                                <div className="flex items-center gap-1 bg-red-100 px-2 py-1 rounded text-[10px] font-bold text-red-700 border border-red-300">
+                                                    <AlertCircle className="w-3 h-3" />
+                                                    Non-Matched Plate
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="absolute top-3 right-3 text-blue-500">
+                                                <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                            </div>
+                                        )}
 
                                         {/* Plate (Top Left) */}
                                         <div className="mb-4">
-                                            <span className="inline-block bg-slate-50 text-slate-700 text-xs font-bold px-2 py-1 rounded border border-slate-200 uppercase tracking-wide">
+                                            <span className={cn(
+                                                "inline-block text-xs font-bold px-2 py-1 rounded border uppercase tracking-wide",
+                                                allocation.driverValidationStatus === 'non_matched'
+                                                    ? "bg-red-50 text-red-700 border-red-300"
+                                                    : "bg-slate-50 text-slate-700 border-slate-200"
+                                            )}>
                                                 {allocation.vehicleReg}
                                             </span>
                                         </div>
@@ -543,30 +628,33 @@ export default function LoadingBoardPage() {
                                         </div>
 
                                         {/* Additional Details */}
-                                        {(allocation.ticketNo || allocation.scheduledDate) && (
-                                            <div className="space-y-1">
-                                                {allocation.ticketNo && (
-                                                    <div className="text-[10px] text-slate-400">
-                                                        Ticket: <span className="text-slate-600 font-medium">{allocation.ticketNo}</span>
-                                                    </div>
-                                                )}
-                                                {allocation.scheduledDate && (
-                                                    <div className="text-[10px] text-slate-400">
-                                                        Scheduled: <span className="text-slate-600 font-medium">{new Date(allocation.scheduledDate).toLocaleDateString()}</span>
-                                                    </div>
-                                                )}
+                                        <div className="space-y-1">
+                                            <div className="text-[10px] text-slate-400">
+                                                Ticket: <span className="text-slate-600 font-medium">{allocation.parkingTicketNumber || 'N/A'}</span>
                                             </div>
-                                        )}
+                                            {allocation.scheduledDate && (
+                                                <div className="text-[10px] text-slate-400">
+                                                    Scheduled: <span className="text-slate-600 font-medium">{new Date(allocation.scheduledDate).toLocaleDateString()}</span>
+                                                </div>
+                                            )}
+                                        </div>
 
                                         {/* Arrival Time Display & Verify Driver Button (Checked In Stage) */}
                                         {stage.id === 'checked_in' && (
                                             <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
-                                                {allocation.actualArrival && (
-                                                    <div className="flex items-center gap-2 text-xs">
-                                                        <Clock className="w-3 h-3 text-green-600" />
-                                                        <span className="text-green-800 font-medium">
-                                                            Arrived at {new Date(allocation.actualArrival).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                                                        </span>
+                                                {(allocation.lionsTimestamp || allocation.lastUpdated || allocation.actualArrival) && (
+                                                    <div className="pt-2 border-t border-emerald-100 bg-emerald-50/50 -mx-3 px-3 py-2">
+                                                        <div className="text-[10px] text-emerald-700 font-medium uppercase tracking-wide">
+                                                            Checked in at Lions Park Truck Stop
+                                                        </div>
+                                                        <div className="text-xs text-emerald-800 font-semibold mt-1">
+                                                            {new Date(allocation.lionsTimestamp || allocation.lastUpdated || allocation.actualArrival).toLocaleString('en-ZA', {
+                                                                day: '2-digit',
+                                                                month: 'short',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            })}
+                                                        </div>
                                                     </div>
                                                 )}
                                                 {/* Driver Validation Status Badge */}
@@ -599,18 +687,20 @@ export default function LoadingBoardPage() {
                                         )}
 
                                         {/* Departure Time Display (Departed Stage) */}
-                                        {stage.id === 'departed' && allocation.departureTime && (
+                                        {stage.id === 'departed' && (allocation.lionsTimestamp || allocation.departureTime) && (
                                             <div className="mt-4 pt-3 border-t border-slate-100">
-                                                <div className="flex items-center gap-2 text-xs">
-                                                    <Clock className="w-3 h-3 text-purple-600" />
-                                                    <span className="text-purple-800 font-medium">
-                                                        Departed at {new Date(allocation.departureTime).toLocaleString('en-US', {
-                                                            month: 'short',
+                                                <div className="pt-2 border-t border-purple-100 bg-purple-50/50 -mx-3 px-3 py-2">
+                                                    <div className="text-[10px] text-purple-700 font-medium uppercase tracking-wide">
+                                                        Departed Lions Park
+                                                    </div>
+                                                    <div className="text-xs text-purple-800 font-semibold mt-1">
+                                                        {new Date(allocation.lionsTimestamp || allocation.departureTime).toLocaleString('en-ZA', {
                                                             day: '2-digit',
+                                                            month: 'short',
                                                             hour: '2-digit',
                                                             minute: '2-digit'
                                                         })}
-                                                    </span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
