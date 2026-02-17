@@ -89,7 +89,7 @@ export default function LoadingBoardPage() {
                         siteStatus: journey?.siteStatus || alloc.status, // Use journey status if available
                         lastEvent: journey?.lastEvent,
                         lastUpdated: journey?.lastUpdated || alloc.updatedAt,
-                        lionsTimestamp: journey?.timestamp, // Add Lions-specific timestamp
+                        lionsTimestamp: journey?.lastUpdated, // Lions-specific journey timestamp (departure/arrival at Lions)
                         hasJourneyEntry: !!journey, // Track if allocation has journey entry
                     };
                 })
@@ -134,39 +134,65 @@ export default function LoadingBoardPage() {
         customer: "All Customers",
         date: "",
         origin: "All Sites",
-        transporter: "All Transporters"
+        transporter: "All Transporters",
+        product: "All Products",
+        search: ""
     });
 
     // Separate open states for Main view and Modal view to prevent conflict
     const [isMainFilterOpen, setIsMainFilterOpen] = useState({
         customer: false,
         origin: false,
-        transporter: false
+        transporter: false,
+        product: false
     });
 
     const [isModalFilterOpen, setIsModalFilterOpen] = useState({
         customer: false,
         origin: false,
-        transporter: false
+        transporter: false,
+        product: false
     });
 
-    // Derived Data for Filters
-    const uniqueCustomers = ["All Customers", ...Array.from(new Set(allocations.map(t => t.customer).filter(Boolean)))];
-    const uniqueOrigins = ["All Sites", ...Array.from(new Set(allocations.map(t => t.origin).filter(Boolean)))];
-    const uniqueTransporters = ["All Transporters", ...Array.from(new Set(allocations.map(t => t.transporter).filter(Boolean)))];
+    // Normalize helper for case/space-insensitive comparison
+    const normalizeStr = (s: string) => s?.trim().toLowerCase().replace(/\s+/g, ' ') || '';
+
+    // Derived Data for Filters - deduplicate transporters by normalized name
+    const uniqueCustomers = ["All Customers", ...Array.from(new Set(allocations.map(t => t.customer).filter(Boolean))).sort()];
+    const uniqueOrigins = ["All Sites", ...Array.from(new Set(allocations.map(t => t.origin).filter(Boolean))).sort()];
+    const uniqueProducts = ["All Products", ...Array.from(new Set(allocations.map(t => t.product).filter(Boolean))).sort()];
+    const transporterMap = new Map<string, string>();
+    allocations.forEach(a => {
+        if (a.transporter) {
+            const key = normalizeStr(a.transporter);
+            if (!transporterMap.has(key)) transporterMap.set(key, a.transporter.trim());
+        }
+    });
+    const uniqueTransporters = ["All Transporters", ...Array.from(transporterMap.values()).sort()];
 
     // Filter Logic
     const filteredAllocations = useMemo(() => {
         return allocations.filter(allocation => {
             const matchCustomer = filters.customer === "All Customers" || allocation.customer === filters.customer;
             const matchOrigin = filters.origin === "All Sites" || allocation.origin === filters.origin;
-            const matchTransporter = filters.transporter === "All Transporters" || allocation.transporter === filters.transporter;
+            const matchTransporter = filters.transporter === "All Transporters" ||
+                normalizeStr(allocation.transporter) === normalizeStr(filters.transporter);
+            const matchProduct = filters.product === "All Products" || allocation.product === filters.product;
 
             // Date filter: check if scheduledDate matches the selected date
             const matchDate = !filters.date || (allocation.scheduledDate &&
                 new Date(allocation.scheduledDate).toISOString().split('T')[0] === filters.date);
 
-            return matchCustomer && matchOrigin && matchTransporter && matchDate;
+            // Free-text search across key fields
+            const q = filters.search.trim().toLowerCase();
+            const matchSearch = !q || [
+                allocation.vehicleReg, allocation.plate,
+                allocation.orderNumber, allocation.driverName,
+                allocation.driver, allocation.product,
+                allocation.customer, allocation.transporter,
+            ].join(' ').toLowerCase().includes(q);
+
+            return matchCustomer && matchOrigin && matchTransporter && matchDate && matchProduct && matchSearch;
         });
     }, [allocations, filters]);
 
@@ -185,11 +211,13 @@ export default function LoadingBoardPage() {
             customer: "All Customers",
             date: "",
             origin: "All Sites",
-            transporter: "All Transporters"
+            transporter: "All Transporters",
+            product: "All Products",
+            search: ""
         });
     };
 
-    const hasActiveFilters = filters.customer !== "All Customers" || filters.origin !== "All Sites" || filters.transporter !== "All Transporters" || filters.date !== "";
+    const hasActiveFilters = filters.customer !== "All Customers" || filters.origin !== "All Sites" || filters.transporter !== "All Transporters" || filters.date !== "" || filters.product !== "All Products" || filters.search !== "";
 
     // Component for Filter Dropdowns
     const FilterDropdown = ({
@@ -248,60 +276,86 @@ export default function LoadingBoardPage() {
         setOpenState: (v: typeof isMainFilterOpen) => void
     }) => (
         <div className={cn(
-            "bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-2 transition-all",
+            "bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2 transition-all",
             onExpandMode ? "border-0 shadow-none p-0" : ""
         )}>
-            <FilterDropdown
-                label="Customer"
-                value={filters.customer}
-                options={uniqueCustomers}
-                isOpen={openState.customer}
-                setIsOpen={(v) => setOpenState({ ...openState, customer: v })}
-                onSelect={(v) => setFilters({ ...filters, customer: v })}
-            />
+            {/* Search row */}
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                    type="text"
+                    value={filters.search}
+                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                    placeholder="Search by plate, driver, order #, product, customer..."
+                    className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+            </div>
+            {/* Dropdown filters row */}
+            <div className="flex flex-col md:flex-row gap-2">
+                <FilterDropdown
+                    label="Customer"
+                    value={filters.customer}
+                    options={uniqueCustomers}
+                    isOpen={openState.customer}
+                    setIsOpen={(v) => setOpenState({ ...openState, customer: v })}
+                    onSelect={(v) => setFilters({ ...filters, customer: v })}
+                />
 
-            <div className="flex-1 p-2 bg-slate-50/50 rounded-lg transition border border-transparent hover:border-slate-200">
-                <label htmlFor="order-date" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block cursor-pointer">Order Date</label>
-                <div className="flex items-center justify-between gap-2">
-                    <input
-                        id="order-date"
-                        type="date"
-                        value={filters.date}
-                        onChange={(e) => setFilters({ ...filters, date: e.target.value })}
-                        className="text-sm font-medium text-slate-700 bg-transparent border-none outline-none w-full cursor-pointer"
-                        placeholder="yyyy-mm-dd"
-                    />
-                    <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <FilterDropdown
+                    label="Product"
+                    value={filters.product}
+                    options={uniqueProducts}
+                    isOpen={openState.product}
+                    setIsOpen={(v) => setOpenState({ ...openState, product: v })}
+                    onSelect={(v) => setFilters({ ...filters, product: v })}
+                />
+
+                <div className="flex-1 p-2 bg-slate-50/50 rounded-lg transition border border-transparent hover:border-slate-200">
+                    <label htmlFor="order-date" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block cursor-pointer">Order Date</label>
+                    <div className="flex items-center justify-between gap-2">
+                        <input
+                            id="order-date"
+                            type="date"
+                            value={filters.date}
+                            onChange={(e) => setFilters({ ...filters, date: e.target.value })}
+                            className="text-sm font-medium text-slate-700 bg-transparent border-none outline-none w-full cursor-pointer"
+                            placeholder="yyyy-mm-dd"
+                        />
+                        <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    </div>
+                </div>
+
+                <FilterDropdown
+                    label="Collection Point"
+                    value={filters.origin}
+                    options={uniqueOrigins}
+                    isOpen={openState.origin}
+                    setIsOpen={(v) => setOpenState({ ...openState, origin: v })}
+                    onSelect={(v) => setFilters({ ...filters, origin: v })}
+                />
+
+                <FilterDropdown
+                    label="Transporter"
+                    value={filters.transporter}
+                    options={uniqueTransporters}
+                    isOpen={openState.transporter}
+                    setIsOpen={(v) => setOpenState({ ...openState, transporter: v })}
+                    onSelect={(v) => setFilters({ ...filters, transporter: v })}
+                />
+
+                <div className="flex items-center gap-2 shrink-0">
+                    {hasActiveFilters && (
+                        <button
+                            onClick={clearFilters}
+                            className="flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition whitespace-nowrap"
+                        >
+                            <X className="w-4 h-4 mr-1" />
+                            Clear
+                        </button>
+                    )}
+                    <span className="text-xs text-slate-400 whitespace-nowrap">{filteredAllocations.length} of {allocations.length}</span>
                 </div>
             </div>
-
-            <FilterDropdown
-                label="Collection Point"
-                value={filters.origin}
-                options={uniqueOrigins}
-                isOpen={openState.origin}
-                setIsOpen={(v) => setOpenState({ ...openState, origin: v })}
-                onSelect={(v) => setFilters({ ...filters, origin: v })}
-            />
-
-            <FilterDropdown
-                label="Transporter"
-                value={filters.transporter}
-                options={uniqueTransporters}
-                isOpen={openState.transporter}
-                setIsOpen={(v) => setOpenState({ ...openState, transporter: v })}
-                onSelect={(v) => setFilters({ ...filters, transporter: v })}
-            />
-
-            {hasActiveFilters && (
-                <button
-                    onClick={clearFilters}
-                    className="flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition"
-                >
-                    <X className="w-4 h-4 mr-1" />
-                    Clear
-                </button>
-            )}
         </div>
     );
 

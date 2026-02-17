@@ -7,7 +7,10 @@ import { anprCheckerService } from '../services/anpr-checker';
 const router = Router();
 
 // Initialize Gemini AI
-const GEMINI_API_KEY = 'AIzaSyBnWnE5z60Vfn7FiZWueiXeDyeeMDVZpgQ';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+if (!GEMINI_API_KEY) {
+  console.warn('⚠️  GEMINI_API_KEY not set - manual image upload will not work');
+}
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 // Configure multer for image uploads (in-memory storage for testing)

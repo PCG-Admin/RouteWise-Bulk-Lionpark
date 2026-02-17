@@ -39,8 +39,8 @@ const navigation: NavigationItem[] = [
         current: false,
         children: [
             { name: "Loading Board", href: "/operations/loading-board", icon: ClipboardList },
-            { name: "Orders", href: "/operations/orders", icon: FileText },
-            { name: "Order Overview", href: "/operations/order-overview", icon: FileText },
+            { name: "Orders Dashboard", href: "/operations/orders", icon: FileText },
+            { name: "Orders Received", href: "/operations/order-overview", icon: FileText },
             { name: "CCTV", href: "/operations/cctv", icon: Camera },
             { name: "Calendar View", href: "/operations/calendar", icon: BarChart3 },
             { name: "Transportation", href: "/operations/transportation", icon: Truck },

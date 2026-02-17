@@ -113,19 +113,25 @@ export default function CCTVPage() {
 
                         // Check allocations (matched plates)
                         if (allocResult.success && allocResult.data && allocResult.data.length > 0) {
-                            const allocation = allocResult.data.find((a: any) =>
-                                a.vehicleReg.replace(/\s+/g, '').toLowerCase() === plate.replace(/\s+/g, '').toLowerCase()
+                            const normalizedPlate = plate.replace(/\s+/g, '').toLowerCase();
+                            const matchingAllocations = allocResult.data.filter((a: any) =>
+                                a.vehicleReg.replace(/\s+/g, '').toLowerCase() === normalizedPlate
                             );
 
-                            if (allocation) {
-                                // Check if it was processed (status changed from scheduled)
-                                if (uploadDirection === 'entry' && allocation.status === 'arrived') {
-                                    setUploadResult(`✅ Plate ${plate} detected! Truck checked in successfully at ${new Date(allocation.actualArrival).toLocaleTimeString()}.`);
-                                    return; // Stop polling
-                                } else if (uploadDirection === 'exit' && allocation.status === 'completed') {
-                                    setUploadResult(`✅ Plate ${plate} detected! Truck departed successfully at ${new Date(allocation.departureTime).toLocaleTimeString()}.`);
-                                    return; // Stop polling
+                            // For the poll check, find the allocation that was just processed:
+                            // Entry → look for one that just became 'arrived'
+                            // Exit  → look for one that just became 'completed'
+                            const processedAllocation = uploadDirection === 'entry'
+                                ? matchingAllocations.find((a: any) => a.status === 'arrived')
+                                : matchingAllocations.find((a: any) => a.status === 'completed' && a.departureTime);
+
+                            if (processedAllocation) {
+                                if (uploadDirection === 'entry') {
+                                    setUploadResult(`✅ Plate ${plate} detected! Truck checked in successfully at ${new Date(processedAllocation.actualArrival).toLocaleTimeString()}.`);
+                                } else {
+                                    setUploadResult(`✅ Plate ${plate} detected! Truck departed successfully at ${new Date(processedAllocation.departureTime).toLocaleTimeString()}.`);
                                 }
+                                return; // Stop polling
                             }
                         }
 

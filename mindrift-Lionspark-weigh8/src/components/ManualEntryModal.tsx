@@ -58,10 +58,37 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
       const result = await response.json();
 
       if (result.success && result.data && result.data.length > 0) {
-        // Find allocation matching the plate number (ignoring spaces)
-        const foundAllocation = result.data.find(
+        // Find all allocations matching the plate number (ignoring spaces)
+        const candidates = result.data.filter(
           (a: Allocation) => a.vehicleReg.replace(/\s+/g, '').toLowerCase() === cleanedPlateNumber.toLowerCase()
         );
+
+        let foundAllocation: Allocation | undefined;
+
+        if (candidates.length === 1) {
+          foundAllocation = candidates[0];
+        } else if (candidates.length > 1) {
+          // Multiple allocations for same plate (different scheduled days).
+          // For entrance gate: prefer scheduled/in_transit (not yet completed).
+          // For exit gate: prefer ready_for_dispatch/arrived/weighing (not completed).
+          const now = new Date().getTime();
+
+          const activeCandidates = gateType === 'entrance'
+            ? candidates.filter((a: Allocation) => a.status === 'scheduled' || a.status === 'in_transit')
+            : candidates.filter((a: Allocation) =>
+                a.status !== 'completed' &&
+                ((a as any).driverValidationStatus === 'ready_for_dispatch' || a.status === 'arrived' || a.status === 'weighing')
+              );
+
+          const pool = activeCandidates.length > 0 ? activeCandidates : candidates;
+
+          // Among pool, pick the one with scheduled date closest to today
+          foundAllocation = pool.sort((a: Allocation, b: Allocation) => {
+            const distA = a.scheduledDate ? Math.abs(new Date(a.scheduledDate).getTime() - now) : Infinity;
+            const distB = b.scheduledDate ? Math.abs(new Date(b.scheduledDate).getTime() - now) : Infinity;
+            return distA - distB;
+          })[0];
+        }
 
         if (foundAllocation) {
           setAllocation(foundAllocation);
@@ -156,9 +183,9 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl animate-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] overflow-hidden">
         {/* Header */}
-        <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+        <div className="p-6 border-b border-slate-200 flex items-center justify-between shrink-0">
           <div>
             <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
               <Search className={cn(
@@ -182,7 +209,7 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 overflow-y-auto flex-1">
           {/* Gate Type Selector */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -427,7 +454,7 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
         </div>
 
         {/* Footer */}
-        <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-3 rounded-b-2xl">
+        <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-3 rounded-b-2xl shrink-0">
           <button
             onClick={onClose}
             disabled={isCheckingIn}

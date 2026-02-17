@@ -236,9 +236,10 @@ export default function TransportationRecordsPage() {
             if (allocDate > filters.dateTo) return false;
         }
 
-        // Transporter filter
-        if (filters.transporter !== 'All' && allocation.transporter !== filters.transporter) {
-            return false;
+        // Transporter filter (normalize to handle casing/spacing differences)
+        if (filters.transporter !== 'All') {
+            const normalize = (s: string) => s?.trim().toLowerCase().replace(/\s+/g, ' ') || '';
+            if (normalize(allocation.transporter) !== normalize(filters.transporter)) return false;
         }
 
         // Order number filter
@@ -291,8 +292,16 @@ export default function TransportationRecordsPage() {
         return true;
     });
 
-    // Get unique values for filters
-    const uniqueTransporters: string[] = ['All', ...Array.from(new Set(allocations.map(a => a.transporter).filter((t): t is string => Boolean(t))))];
+    // Get unique transporters deduplicated by normalized name (handles casing/spacing differences)
+    const normalize = (s: string) => s?.trim().toLowerCase().replace(/\s+/g, ' ') || '';
+    const transporterMap = new Map<string, string>(); // normalized key -> first canonical value
+    allocations.forEach(a => {
+        if (a.transporter) {
+            const key = normalize(a.transporter);
+            if (!transporterMap.has(key)) transporterMap.set(key, a.transporter.trim());
+        }
+    });
+    const uniqueTransporters: string[] = ['All', ...Array.from(transporterMap.values())];
 
     // Pagination calculations
     const totalItems = filteredAllocations.length;

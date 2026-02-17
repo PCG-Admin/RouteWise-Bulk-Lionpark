@@ -381,10 +381,18 @@ router.put('/:id', async (req, res) => {
       'requestedPickupDate', 'requestedDeliveryDate'
     ];
 
+    // Date fields that need to be converted to Date objects
+    const dateFields = ['requestedPickupDate', 'requestedDeliveryDate'];
+
     // Only include fields that are provided in the request
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
-        updateData[field] = req.body[field];
+        if (dateFields.includes(field)) {
+          // Convert string dates to Date objects (or null if empty)
+          updateData[field] = req.body[field] ? new Date(req.body[field]) : null;
+        } else {
+          updateData[field] = req.body[field];
+        }
       }
     }
 
@@ -398,8 +406,11 @@ router.put('/:id', async (req, res) => {
 
     console.log(`Updated order ${orderId}:`, updateData);
 
-    // Invalidate cache after updating order
-    await invalidateCache('orders:*');
+    // Invalidate cache after updating order (including truck-allocations which join order data)
+    await Promise.all([
+      invalidateCache('orders:*'),
+      invalidateCache('truck-allocations:*'),
+    ]);
 
     res.json({
       success: true,

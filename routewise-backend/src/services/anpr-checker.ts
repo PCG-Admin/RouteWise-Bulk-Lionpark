@@ -178,19 +178,45 @@ class ANPRCheckerService {
 
       // Match based on direction
       let matchedAllocation;
+      const now = new Date();
 
       if (detection.direction === 'entry') {
-        // Entry: Look for scheduled or in-transit trucks
-        matchedAllocation = allocations.find(a =>
+        // Entry: Look for scheduled or in-transit trucks matching this plate
+        // If multiple allocations match (same truck, different days), pick the one
+        // whose scheduledDate is closest to today (earliest upcoming, or most recent past).
+        const candidates = allocations.filter(a =>
           this.normalizePlateNumber(a.vehicleReg) === plateNumber &&
           (a.status === 'scheduled' || a.status === 'in_transit')
         );
+        if (candidates.length === 1) {
+          matchedAllocation = candidates[0];
+        } else if (candidates.length > 1) {
+          // Sort by absolute distance from today, ascending — pick closest date
+          matchedAllocation = candidates.sort((a, b) => {
+            const distA = a.scheduledDate ? Math.abs(new Date(a.scheduledDate).getTime() - now.getTime()) : Infinity;
+            const distB = b.scheduledDate ? Math.abs(new Date(b.scheduledDate).getTime() - now.getTime()) : Infinity;
+            return distA - distB;
+          })[0];
+          console.log(`⚠️ Multiple allocations found for plate ${plateNumber} — selected closest scheduled date: ID ${matchedAllocation.id} (${matchedAllocation.scheduledDate})`);
+        }
       } else {
-        // Exit: Look for trucks with ready_for_dispatch driver validation status
-        matchedAllocation = allocations.find(a =>
+        // Exit: Look for trucks with ready_for_dispatch driver validation status that are NOT already completed
+        // Same logic: if multiple match, prefer the one closest to today's date
+        const candidates = allocations.filter(a =>
           this.normalizePlateNumber(a.vehicleReg) === plateNumber &&
-          a.driverValidationStatus === 'ready_for_dispatch'
+          a.driverValidationStatus === 'ready_for_dispatch' &&
+          a.status !== 'completed'
         );
+        if (candidates.length === 1) {
+          matchedAllocation = candidates[0];
+        } else if (candidates.length > 1) {
+          matchedAllocation = candidates.sort((a, b) => {
+            const distA = a.scheduledDate ? Math.abs(new Date(a.scheduledDate).getTime() - now.getTime()) : Infinity;
+            const distB = b.scheduledDate ? Math.abs(new Date(b.scheduledDate).getTime() - now.getTime()) : Infinity;
+            return distA - distB;
+          })[0];
+          console.log(`⚠️ Multiple exit candidates for plate ${plateNumber} — selected ID ${matchedAllocation.id}`);
+        }
       }
 
       if (matchedAllocation) {

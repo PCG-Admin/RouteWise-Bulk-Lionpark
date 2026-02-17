@@ -76,8 +76,19 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
   const [freightCompanies, setFreightCompanies] = useState<FreightCompany[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [systemTransporters, setSystemTransporters] = useState<any[]>([]);
   const [selectedTransporterId, setSelectedTransporterId] = useState<number | null>(null);
   const [allocation, setAllocation] = useState<any>(null);
+
+  // Normalize a string for fuzzy matching: lowercase + collapse spaces
+  const normalize = (str: string) => str?.trim().toLowerCase().replace(/\s+/g, ' ') || '';
+
+  // Find closest matching transporter in system (case/space insensitive)
+  const findMatchingTransporter = (rawName: string) => {
+    if (!rawName || systemTransporters.length === 0) return null;
+    const normalizedRaw = normalize(rawName);
+    return systemTransporters.find(t => normalize(t.name) === normalizedRaw) || null;
+  };
 
   // Quick add modals
   const [showQuickAdd, setShowQuickAdd] = useState<{
@@ -110,6 +121,24 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
     fetchMasterData();
   }, [allocationId]);
 
+  // Once system transporters load + allocation is known (no existing ticket), normalize the pre-filled transporter name
+  useEffect(() => {
+    if (systemTransporters.length > 0 && allocation && !ticket) {
+      const rawName = allocation.transporter;
+      const match = findMatchingTransporter(rawName);
+      if (match) {
+        setFormData(prev => ({
+          ...prev,
+          transporterName: match.name,
+          transporterNumber: match.code || prev.transporterNumber,
+          transporterPhone: match.phone || prev.transporterPhone,
+        }));
+        setSelectedTransporterId(match.id);
+        fetchDrivers(match.id);
+      }
+    }
+  }, [systemTransporters, allocation]);
+
   const fetchMasterData = async () => {
     try {
       // Fetch freight companies
@@ -117,6 +146,13 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
       const freightCompaniesData = await freightCompaniesRes.json();
       if (freightCompaniesData.success) {
         setFreightCompanies(freightCompaniesData.data);
+      }
+
+      // Fetch system transporters for fuzzy matching
+      const transportersRes = await fetch('http://localhost:3001/api/transporters');
+      const transportersData = await transportersRes.json();
+      if (transportersData.success) {
+        setSystemTransporters(transportersData.data || []);
       }
 
       // Fetch clients (freight customers)

@@ -271,6 +271,18 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
                                             <p className="text-sm font-medium text-slate-900">{order.transporter}</p>
                                         </div>
                                     )}
+                                    {order.customer && (
+                                        <div>
+                                            <p className="text-xs text-slate-500 uppercase">Customer</p>
+                                            <p className="text-sm font-medium text-slate-900">{order.customer}</p>
+                                        </div>
+                                    )}
+                                    {order.product && (
+                                        <div>
+                                            <p className="text-xs text-slate-500 uppercase">Product</p>
+                                            <p className="text-sm font-medium text-slate-900">{order.product}</p>
+                                        </div>
+                                    )}
                                     {order.ticketNo && (
                                         <div>
                                             <p className="text-xs text-slate-500 uppercase">Ticket Number</p>

@@ -1,34 +1,24 @@
 "use client";
 
-import { ArrowUpRight, Clock, CheckCircle2, AlertTriangle, Truck, Weight, RefreshCw, AlertCircle as AlertIcon, FileText } from "lucide-react";
+import { RefreshCw, AlertCircle as AlertIcon, FileText, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 
 const API_BASE_URL = "http://localhost:3001";
 
-interface Stat {
-    name: string;
-    value: string;
-    change: string;
-    icon: string;
-    color: string;
-    bg: string;
-}
-
-interface Order {
-    id: string;
-    client: string;
-    destination: string;
-    status: string;
-    weight: string;
-    truck: string;
-}
-
 export default function OrderOverview() {
-    const [stats, setStats] = useState<Stat[]>([]);
-    const [recentOrders, setRecentOrders] = useState<Order[]>([]);
+    const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Filters
+    const [search, setSearch] = useState('');
+    const [filterStatus, setFilterStatus] = useState('all');
+    const [filterProduct, setFilterProduct] = useState('');
+    const [filterDateFrom, setFilterDateFrom] = useState('');
+    const [filterDateTo, setFilterDateTo] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
 
     useEffect(() => {
         fetchOrders();
@@ -38,194 +28,219 @@ export default function OrderOverview() {
         try {
             setLoading(true);
             setError(null);
-            // Filter by site ID for Lions Park (only show orders destined for this site)
             const siteId = process.env.NEXT_PUBLIC_SITE_ID;
             const url = siteId
                 ? `${API_BASE_URL}/api/orders?siteId=${siteId}`
                 : `${API_BASE_URL}/api/orders`;
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error('Failed to fetch orders');
-            }
-            const data = await response.json();
-            setStats(data.stats || []);
-            setRecentOrders(data.recentOrders || []);
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Failed to fetch orders');
+            const data = await res.json();
+            setOrders(data.data || []);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load orders');
-            setStats([]);
-            setRecentOrders([]);
         } finally {
             setLoading(false);
         }
     };
 
-    const getIconComponent = (iconName: string) => {
-        const icons: { [key: string]: any } = {
-            Clock,
-            CheckCircle2,
-            AlertTriangle,
-            Weight
+    const getStatusBadge = (status: string) => {
+        const map: { [key: string]: string } = {
+            pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+            confirmed: 'bg-blue-100 text-blue-700 border-blue-200',
+            in_transit: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+            delivered: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+            cancelled: 'bg-red-100 text-red-700 border-red-200',
         };
-        return icons[iconName] || Clock;
+        return map[status] || 'bg-slate-100 text-slate-700 border-slate-200';
     };
+
+    // Filter logic
+    const filteredOrders = useMemo(() => {
+        return orders.filter(order => {
+            const q = search.trim().toLowerCase();
+            if (q) {
+                const haystack = [order.orderNumber, order.product, order.clientName, order.originAddress, order.destinationAddress].join(' ').toLowerCase();
+                if (!haystack.includes(q)) return false;
+            }
+            if (filterStatus !== 'all' && order.status !== filterStatus) return false;
+            if (filterProduct && !order.product?.toLowerCase().includes(filterProduct.toLowerCase())) return false;
+            if (filterDateFrom && order.requestedPickupDate) {
+                if (new Date(order.requestedPickupDate).toISOString().split('T')[0] < filterDateFrom) return false;
+            }
+            if (filterDateTo && order.requestedPickupDate) {
+                if (new Date(order.requestedPickupDate).toISOString().split('T')[0] > filterDateTo) return false;
+            }
+            return true;
+        });
+    }, [orders, search, filterStatus, filterProduct, filterDateFrom, filterDateTo]);
+
+    const hasActiveFilters = search || filterStatus !== 'all' || filterProduct || filterDateFrom || filterDateTo;
+    const totalPages = Math.max(1, Math.ceil(filteredOrders.length / itemsPerPage));
+    const paginatedOrders = filteredOrders.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
     return (
         <div className="space-y-8">
             {/* Header */}
-            <div>
-                <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Order Overview</h1>
-                <p className="text-slate-500 mt-2">Real-time status of logistics and transportation.</p>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Order Overview</h1>
+                    <p className="text-slate-500 mt-1">Real-time status of logistics and transportation.</p>
+                </div>
+                <button onClick={fetchOrders} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition shadow-sm">
+                    <RefreshCw className="w-4 h-4" />
+                    Refresh
+                </button>
             </div>
 
-            {/* Error State */}
             {error && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
                     <AlertIcon className="w-5 h-5 text-red-600" />
-                    <div>
-                        <p className="text-sm font-medium text-red-900">Error loading orders</p>
-                        <p className="text-xs text-red-700">{error}</p>
-                    </div>
+                    <p className="text-sm font-medium text-red-900">{error}</p>
                 </div>
             )}
 
-            {/* Loading State */}
             {loading && (
                 <div className="flex justify-center items-center py-12">
-                    <div className="text-center">
-                        <RefreshCw className="w-8 h-8 animate-spin text-slate-400 mx-auto mb-2" />
-                        <p className="text-slate-500">Loading orders...</p>
+                    <RefreshCw className="w-8 h-8 animate-spin text-slate-400" />
+                </div>
+            )}
+
+            {/* Summary counts */}
+            {!loading && orders.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                        { label: 'Total Orders', value: orders.length, color: 'text-slate-900', bg: 'bg-slate-50' },
+                        { label: 'Pending', value: orders.filter(o => o.status === 'pending').length, color: 'text-yellow-700', bg: 'bg-yellow-50' },
+                        { label: 'In Transit', value: orders.filter(o => o.status === 'in_transit').length, color: 'text-blue-700', bg: 'bg-blue-50' },
+                        { label: 'Delivered', value: orders.filter(o => o.status === 'delivered').length, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+                    ].map(s => (
+                        <div key={s.label} className={`p-4 rounded-xl border border-slate-200 shadow-sm ${s.bg}`}>
+                            <p className="text-xs font-medium text-slate-500">{s.label}</p>
+                            <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Search & Filters */}
+            {!loading && (
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
+                    <div className="flex flex-col md:flex-row gap-3">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="Search by order number, product, customer..."
+                                value={search}
+                                onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+                                className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            />
+                        </div>
+                        <select
+                            value={filterStatus}
+                            onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+                            className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-w-[140px]"
+                        >
+                            <option value="all">All Statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="in_transit">In Transit</option>
+                            <option value="delivered">Delivered</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                        <input
+                            type="text"
+                            placeholder="Filter by product..."
+                            value={filterProduct}
+                            onChange={(e) => { setFilterProduct(e.target.value); setCurrentPage(1); }}
+                            className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-w-[160px]"
+                        />
+                    </div>
+                    <div className="flex flex-col md:flex-row items-center gap-3">
+                        <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Pickup Date:</span>
+                        <input type="date" value={filterDateFrom} onChange={(e) => { setFilterDateFrom(e.target.value); setCurrentPage(1); }}
+                            className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                        <span className="text-xs text-slate-400">to</span>
+                        <input type="date" value={filterDateTo} onChange={(e) => { setFilterDateTo(e.target.value); setCurrentPage(1); }}
+                            className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                        {hasActiveFilters && (
+                            <button onClick={() => { setSearch(''); setFilterStatus('all'); setFilterProduct(''); setFilterDateFrom(''); setFilterDateTo(''); setCurrentPage(1); }}
+                                className="px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg border border-red-200 transition whitespace-nowrap">
+                                ✕ Clear Filters
+                            </button>
+                        )}
+                        <span className="ml-auto text-xs text-slate-400">{filteredOrders.length} of {orders.length} orders</span>
                     </div>
                 </div>
             )}
 
-            {/* Empty State */}
-            {!loading && !error && stats.length === 0 && recentOrders.length === 0 && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-12 text-center">
-                    <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">No Orders Available</h3>
-                    <p className="text-slate-500">No order data found.</p>
-                </div>
-            )}
-
-            {/* Stats Grid */}
-            {!loading && !error && stats.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {stats.map((stat) => {
-                        const IconComponent = getIconComponent(stat.icon);
-                        return (
-                            <div key={stat.name} className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all group">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <p className="text-sm font-medium text-slate-500">{stat.name}</p>
-                                        <p className="text-3xl font-bold text-slate-900 mt-2">{stat.value}</p>
-                                    </div>
-                                    <div className={cn("p-3 rounded-xl transition-colors", stat.bg)}>
-                                        <IconComponent className={cn("w-6 h-6", stat.color)} />
-                                    </div>
-                                </div>
-                                <div className="mt-4 flex items-center text-sm">
-                                    <span className={cn("flex items-center font-medium", stat.change.startsWith('+') ? "text-emerald-500" : "text-red-500")}>
-                                        {stat.change}
-                                        <ArrowUpRight className="w-4 h-4 ml-1" />
-                                    </span>
-                                    <span className="text-slate-500 ml-2">vs last month</span>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            {/* Main Content Split */}
-            {!loading && !error && recentOrders.length > 0 && (
-                <div className="grid lg:grid-cols-3 gap-8">
-
-                    {/* Left Column - Recent Activity */}
-                    <div className="lg:col-span-2 space-y-6">
-                        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-lg font-semibold text-slate-900">Recent Orders</h3>
-                                <button className="text-sm text-blue-600 hover:underline font-medium">View All</button>
-                            </div>
-
+            {/* Orders Table */}
+            {!loading && !error && (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                    {filteredOrders.length === 0 ? (
+                        <div className="py-16 text-center">
+                            <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                            <p className="text-slate-500 font-medium">{hasActiveFilters ? 'No orders match your filters' : 'No orders available'}</p>
+                            {hasActiveFilters && (
+                                <button onClick={() => { setSearch(''); setFilterStatus('all'); setFilterProduct(''); setFilterDateFrom(''); setFilterDateTo(''); }}
+                                    className="mt-3 text-sm text-blue-600 hover:underline">Clear filters</button>
+                            )}
+                        </div>
+                    ) : (
+                        <>
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr className="text-slate-500 text-sm border-b border-slate-100">
-                                            <th className="pb-4 font-medium pl-2">Order ID</th>
-                                            <th className="pb-4 font-medium">Client</th>
-                                            <th className="pb-4 font-medium">Destination</th>
-                                            <th className="pb-4 font-medium">Status</th>
-                                            <th className="pb-4 font-medium">Weight</th>
-                                            <th className="pb-4 font-medium">Truck</th>
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 border-b border-slate-200">
+                                        <tr>
+                                            {['Order #', 'Product', 'Customer', 'Route', 'Status', 'Pickup Date', 'Delivery Date', 'Qty'].map(h => (
+                                                <th key={h} className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                                            ))}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {recentOrders.map((order) => (
-                                            <tr key={order.id} className="group hover:bg-slate-50 transition-colors">
-                                                <td className="py-4 pl-2 text-slate-900 font-medium">{order.id}</td>
-                                                <td className="py-4 text-slate-600">{order.client}</td>
-                                                <td className="py-4 text-slate-600">{order.destination}</td>
-                                                <td className="py-4">
-                                                    <span className={cn(
-                                                        "px-2.5 py-1 rounded-full text-xs font-medium border",
-                                                        order.status === 'Completed' ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
-                                                            order.status === 'In Transit' ? "bg-blue-100 text-blue-700 border-blue-200" :
-                                                                order.status === 'Loading' ? "bg-amber-100 text-amber-700 border-amber-200" :
-                                                                    "bg-slate-100 text-slate-700 border-slate-200"
-                                                    )}>
-                                                        {order.status}
+                                        {paginatedOrders.map((order) => (
+                                            <tr key={order.id} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{order.orderNumber || '-'}</td>
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{order.product || '-'}</td>
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{order.clientName || '-'}</td>
+                                                <td className="px-4 py-3 text-slate-500 text-xs max-w-[200px]">
+                                                    <div className="truncate">{order.originAddress || '-'}</div>
+                                                    <div className="truncate text-slate-400">→ {order.destinationAddress || '-'}</div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className={cn("px-2.5 py-1 rounded-full text-xs font-medium border capitalize whitespace-nowrap", getStatusBadge(order.status))}>
+                                                        {order.status?.replace('_', ' ') || '-'}
                                                     </span>
                                                 </td>
-                                                <td className="py-4 text-slate-600">{order.weight}</td>
-                                                <td className="py-4 text-slate-500 font-mono text-xs">{order.truck}</td>
+                                                <td className="px-4 py-3 text-slate-500 text-sm whitespace-nowrap">
+                                                    {order.requestedPickupDate ? new Date(order.requestedPickupDate).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-500 text-sm whitespace-nowrap">
+                                                    {order.requestedDeliveryDate ? new Date(order.requestedDeliveryDate).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{order.quantity ? `${order.quantity} ${order.unit || ''}` : '-'}</td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
-                    </div>
 
-                    {/* Right Column - Fleet Status or similar */}
-                    <div className="space-y-6">
-                        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                            <h3 className="text-lg font-semibold text-slate-900 mb-4">Traffic Status</h3>
-                            <div className="relative aspect-video rounded-xl bg-slate-100 overflow-hidden group">
-                                {/* Placeholder for Map/CCTV */}
-                                <div className="absolute inset-0 flex items-center justify-center text-slate-400">
-                                    <Truck className="w-12 h-12 opacity-50" />
-                                </div>
-                                {/* Overlay Gradient */}
-                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent" />
-                                <div className="absolute bottom-4 left-4">
-                                    <p className="text-white font-medium">Main Gate Complex</p>
-                                    <p className="text-xs text-emerald-400 flex items-center gap-1">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                        Live Feed
+                            {/* Pagination */}
+                            {totalPages > 1 && (
+                                <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                                    <p className="text-xs text-slate-500">
+                                        Showing {(currentPage - 1) * itemsPerPage + 1}–{Math.min(currentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length}
                                     </p>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 space-y-4">
-                                <div className="flex justify-between items-center p-3 rounded-lg bg-slate-50 border border-slate-100">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                                        <span className="text-sm text-slate-700">Weighbridge A</span>
+                                    <div className="flex gap-1">
+                                        <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}
+                                            className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 transition">Previous</button>
+                                        <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)}
+                                            className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 transition">Next</button>
                                     </div>
-                                    <span className="text-xs text-slate-500">Available</span>
                                 </div>
-                                <div className="flex justify-between items-center p-3 rounded-lg bg-slate-50 border border-slate-100">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-2 h-2 rounded-full bg-amber-500" />
-                                        <span className="text-sm text-slate-700">Weighbridge B</span>
-                                    </div>
-                                    <span className="text-xs text-slate-500">Busy (Queue: 2)</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
+                            )}
+                        </>
+                    )}
                 </div>
             )}
         </div>

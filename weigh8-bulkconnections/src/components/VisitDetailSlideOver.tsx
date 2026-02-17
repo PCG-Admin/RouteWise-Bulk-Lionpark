@@ -135,6 +135,18 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                                                     <p className="text-sm font-medium text-slate-900">{truck.transporter}</p>
                                                 </div>
                                             )}
+                                            {truck.customer && (
+                                                <div>
+                                                    <p className="text-xs text-slate-500 uppercase">Customer</p>
+                                                    <p className="text-sm font-medium text-slate-900">{truck.customer}</p>
+                                                </div>
+                                            )}
+                                            {truck.product && (
+                                                <div>
+                                                    <p className="text-xs text-slate-500 uppercase">Product</p>
+                                                    <p className="text-sm font-medium text-slate-900">{truck.product}</p>
+                                                </div>
+                                            )}
                                             {truck.ticketNo && (
                                                 <div>
                                                     <p className="text-xs text-slate-500 uppercase">Ticket Number</p>

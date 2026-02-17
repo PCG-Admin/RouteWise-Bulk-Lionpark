@@ -402,7 +402,7 @@ router.get('/', async (req, res) => {
       ...allocation,
       orderNumber: order?.orderNumber,
       product: order?.product,
-      customer: parkingTicket?.customerName || client?.name, // Use parking ticket customer if available
+      customer: parkingTicket?.customerName || client?.name || order?.clientName, // Use parking ticket > client record > order clientName
       origin: order?.originAddress,
       originAddress: order?.originAddress,
       destinationAddress: order?.destinationAddress,
@@ -484,6 +484,80 @@ router.get('/:orderId', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch truck allocations',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * PUT /api/truck-allocations/:id
+ * Update allocation details (vehicle, driver, transporter, weights, scheduled date, notes)
+ */
+router.put('/:id', async (req, res) => {
+  try {
+    const tenantId = '1';
+    const { id } = req.params;
+
+    // Only allow updating safe allocation-level fields (not status or journey fields)
+    const {
+      vehicleReg,
+      driverName,
+      driverPhone,
+      driverId,
+      transporter,
+      scheduledDate,
+      grossWeight,
+      tareWeight,
+      netWeight,
+      ticketNo,
+      notes,
+    } = req.body;
+
+    const updateData: any = { updatedAt: new Date() };
+
+    if (vehicleReg !== undefined) updateData.vehicleReg = vehicleReg;
+    if (driverName !== undefined) updateData.driverName = driverName;
+    if (driverPhone !== undefined) updateData.driverPhone = driverPhone;
+    if (driverId !== undefined) updateData.driverId = driverId;
+    if (transporter !== undefined) updateData.transporter = transporter;
+    if (ticketNo !== undefined) updateData.ticketNo = ticketNo;
+    if (scheduledDate !== undefined) updateData.scheduledDate = scheduledDate ? new Date(scheduledDate) : null;
+    if (grossWeight !== undefined) updateData.grossWeight = grossWeight || null;
+    if (tareWeight !== undefined) updateData.tareWeight = tareWeight || null;
+    if (netWeight !== undefined) updateData.netWeight = netWeight || null;
+    if (notes !== undefined) updateData.notes = notes;
+
+    const [updated] = await db
+      .update(truckAllocations)
+      .set(updateData)
+      .where(and(
+        eq(truckAllocations.id, parseInt(id)),
+        eq(truckAllocations.tenantId, tenantId)
+      ))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        error: 'Truck allocation not found',
+      });
+    }
+
+    // Invalidate cache so both systems see the updated data immediately
+    await invalidateCache('truck-allocations:*');
+
+    console.log(`✓ Allocation ${id} details updated: ${updated.vehicleReg}`);
+
+    res.json({
+      success: true,
+      data: updated,
+      message: 'Allocation updated successfully',
+    });
+  } catch (error) {
+    console.error('Update allocation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update allocation',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw, TrendingUp, Clock, CheckCircle2, Truck, Filter, Box, X, Calendar as CalendarIcon, ChevronDown } from "lucide-react";
+import { RefreshCw, TrendingUp, Clock, CheckCircle2, Truck, Filter, Box, X, Calendar as CalendarIcon, ChevronDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { VisitDetailSlideOver } from "@/components/VisitDetailSlideOver";
@@ -16,8 +16,10 @@ type FilterBarProps = {
         date: string;
         collection: string;
         transporter: string;
+        product: string;
+        search: string;
     };
-    setFilters: (filters: { customer: string; date: string; collection: string; transporter: string }) => void;
+    setFilters: (filters: { customer: string; date: string; collection: string; transporter: string; product: string; search: string }) => void;
     trucks: any[];
 };
 
@@ -92,67 +94,92 @@ function FilterBar({ filters, setFilters, trucks }: FilterBarProps) {
             customer: "",
             date: "",
             collection: "",
-            transporter: ""
+            transporter: "",
+            product: "",
+            search: ""
         });
     };
 
     const hasActiveFilters = Object.values(filters).some(value => value !== "");
+    const uniqueProducts = Array.from(new Set(trucksArray.map((t: any) => t.product).filter(Boolean))).sort() as string[];
 
     return (
-        <div className="flex flex-col md:flex-row gap-4">
-            <CustomSelect
-                label="Customer"
-                value={filters.customer}
-                onChange={(val) => setFilters({ ...filters, customer: val })}
-                options={Array.from(new Set(trucksArray.map((t: any) => t.customer))).sort()}
-                placeholder="All Customers"
-            />
-
-            {/* Date Filter - kept as input but styled to match */}
-            <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm p-3 hover:border-slate-300 transition-colors">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Order Date</label>
-                <div className="relative">
-                    <input
-                        type="date"
-                        className="w-full text-sm font-bold text-slate-700 bg-transparent border-none p-0 focus:ring-0 cursor-pointer min-h-[20px] font-sans"
-                        value={filters.date}
-                        onChange={(e) => setFilters({ ...filters, date: e.target.value })}
-                        placeholder="yyyy/mm/dd"
-                    />
-                </div>
+        <div className="flex flex-col gap-3">
+            {/* Search row */}
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                    type="text"
+                    value={filters.search}
+                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                    placeholder="Search by plate, driver, order #, product, customer..."
+                    className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
             </div>
+            {/* Dropdown filters row */}
+            <div className="flex flex-col md:flex-row gap-4">
+                <CustomSelect
+                    label="Customer"
+                    value={filters.customer}
+                    onChange={(val) => setFilters({ ...filters, customer: val })}
+                    options={Array.from(new Set(trucksArray.map((t: any) => t.customer))).sort() as string[]}
+                    placeholder="All Customers"
+                />
 
-            <CustomSelect
-                label="Collection Point"
-                value={filters.collection}
-                onChange={(val) => setFilters({ ...filters, collection: val })}
-                options={Array.from(new Set(trucksArray.map((t: any) => t.collection))).sort()}
-                placeholder="All Sites"
-            />
+                <CustomSelect
+                    label="Product"
+                    value={filters.product}
+                    onChange={(val) => setFilters({ ...filters, product: val })}
+                    options={uniqueProducts}
+                    placeholder="All Products"
+                />
 
-            <CustomSelect
-                label="Transporter"
-                value={filters.transporter}
-                onChange={(val) => setFilters({ ...filters, transporter: val })}
-                options={Array.from(new Set(trucksArray.map((t: any) => t.transporter))).sort()}
-                placeholder="All Transporters"
-            />
+                {/* Date Filter */}
+                <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm p-3 hover:border-slate-300 transition-colors">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Order Date</label>
+                    <div className="relative">
+                        <input
+                            type="date"
+                            className="w-full text-sm font-bold text-slate-700 bg-transparent border-none p-0 focus:ring-0 cursor-pointer min-h-[20px] font-sans"
+                            value={filters.date}
+                            onChange={(e) => setFilters({ ...filters, date: e.target.value })}
+                            placeholder="yyyy/mm/dd"
+                        />
+                    </div>
+                </div>
 
-            {/* Clear Button */}
-            <div className="flex items-center justify-center">
-                <button
-                    onClick={clearFilters}
-                    disabled={!hasActiveFilters}
-                    className={cn(
-                        "flex items-center gap-1.5 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wide transition-all whitespace-nowrap border shadow-sm h-full",
-                        hasActiveFilters
-                            ? "bg-white text-red-600 hover:bg-red-50 border-red-100 hover:border-red-200"
-                            : "bg-transparent text-slate-300 border-transparent cursor-not-allowed hidden md:flex"
-                    )}
-                >
-                    <span>Clear Filters</span>
-                    <X className="w-4 h-4" />
-                </button>
+                <CustomSelect
+                    label="Collection Point"
+                    value={filters.collection}
+                    onChange={(val) => setFilters({ ...filters, collection: val })}
+                    options={Array.from(new Set(trucksArray.map((t: any) => t.collection))).sort() as string[]}
+                    placeholder="All Sites"
+                />
+
+                <CustomSelect
+                    label="Transporter"
+                    value={filters.transporter}
+                    onChange={(val) => setFilters({ ...filters, transporter: val })}
+                    options={Array.from(new Set(trucksArray.map((t: any) => t.transporter))).sort() as string[]}
+                    placeholder="All Transporters"
+                />
+
+                {/* Clear Button */}
+                <div className="flex items-center justify-center">
+                    <button
+                        onClick={clearFilters}
+                        disabled={!hasActiveFilters}
+                        className={cn(
+                            "flex items-center gap-1.5 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wide transition-all whitespace-nowrap border shadow-sm h-full",
+                            hasActiveFilters
+                                ? "bg-white text-red-600 hover:bg-red-50 border-red-100 hover:border-red-200"
+                                : "bg-transparent text-slate-300 border-transparent cursor-not-allowed hidden md:flex"
+                        )}
+                    >
+                        <span>Clear Filters</span>
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -168,7 +195,9 @@ export default function LoadingBoardPage() {
         customer: "",
         date: "",
         collection: "",
-        transporter: ""
+        transporter: "",
+        product: "",
+        search: ""
     });
     const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
     const [manualGate, setManualGate] = useState<'entry' | 'exit'>('entry');
@@ -293,15 +322,24 @@ export default function LoadingBoardPage() {
     const getTrucksByStage = (stage: Stage) => {
         return trucks.filter((truck: any) => {
             const matchesStage = truck.stage === stage;
-            const matchesCustomer = filters.customer === "" || truck.customer.toLowerCase().includes(filters.customer.toLowerCase());
-            const matchesTransporter = filters.transporter === "" || truck.transporter.toLowerCase().includes(filters.transporter.toLowerCase());
-            const matchesCollection = filters.collection === "" || truck.collection.toLowerCase().includes(filters.collection.toLowerCase());
+            const matchesCustomer = filters.customer === "" || (truck.customer || '').toLowerCase().includes(filters.customer.toLowerCase());
+            const matchesTransporter = filters.transporter === "" || (truck.transporter || '').toLowerCase().includes(filters.transporter.toLowerCase());
+            const matchesCollection = filters.collection === "" || (truck.collection || '').toLowerCase().includes(filters.collection.toLowerCase());
+            const matchesProduct = filters.product === "" || (truck.product || '').toLowerCase().includes(filters.product.toLowerCase());
 
-            // Date filter: check if scheduledDate matches the selected date
+            // Date filter
             const matchesDate = !filters.date || (truck.scheduledDate &&
                 new Date(truck.scheduledDate).toISOString().split('T')[0] === filters.date);
 
-            return matchesStage && matchesCustomer && matchesTransporter && matchesCollection && matchesDate;
+            // Free-text search
+            const q = filters.search.trim().toLowerCase();
+            const matchesSearch = !q || [
+                truck.plate, truck.orderNo,
+                truck.driver, truck.product,
+                truck.customer, truck.transporter,
+            ].join(' ').toLowerCase().includes(q);
+
+            return matchesStage && matchesCustomer && matchesTransporter && matchesCollection && matchesProduct && matchesDate && matchesSearch;
         });
     };
 
@@ -331,14 +369,33 @@ export default function LoadingBoardPage() {
             if (!response.ok) throw new Error('Failed to search allocations');
 
             const data = await response.json();
-            const allocation = data.data?.find((a: any) =>
-                a.vehicleReg?.toLowerCase().replace(/\s/g, '') === manualPlate.toLowerCase().replace(/\s/g, '')
-            );
+            const normalizedPlate = manualPlate.toLowerCase().replace(/\s/g, '');
+            const candidates = data.data?.filter((a: any) =>
+                a.vehicleReg?.toLowerCase().replace(/\s/g, '') === normalizedPlate
+            ) || [];
 
-            if (allocation) {
-                setSearchedAllocation(allocation);
-            } else {
+            if (candidates.length === 0) {
                 alert(`No allocation found for plate: ${manualPlate}`);
+            } else if (candidates.length === 1) {
+                setSearchedAllocation(candidates[0]);
+            } else {
+                // Multiple allocations for same plate (different scheduled days).
+                // Prefer active (not completed) allocations, then closest date to today.
+                const now = new Date().getTime();
+                const activeCandidates = manualGate === 'entry'
+                    ? candidates.filter((a: any) => a.status === 'scheduled' || a.status === 'in_transit')
+                    : candidates.filter((a: any) =>
+                        a.status !== 'completed' &&
+                        (a.driverValidationStatus === 'ready_for_dispatch' || a.status === 'arrived' || a.status === 'weighing')
+                      );
+                const pool = activeCandidates.length > 0 ? activeCandidates : candidates;
+                const best = pool.sort((a: any, b: any) => {
+                    const distA = a.scheduledDate ? Math.abs(new Date(a.scheduledDate).getTime() - now) : Infinity;
+                    const distB = b.scheduledDate ? Math.abs(new Date(b.scheduledDate).getTime() - now) : Infinity;
+                    return distA - distB;
+                })[0];
+                setSearchedAllocation(best);
+                console.log(`Multiple allocations for ${manualPlate} — selected ID ${best.id} (status: ${best.status})`);
             }
         } catch (error) {
             console.error('Search error:', error);
@@ -776,10 +833,10 @@ export default function LoadingBoardPage() {
                                                 {/* Timestamp for Staging trucks */}
                                                 {truck.stage === 'staging' && truck.actualArrival && (
                                                     <div className="pt-2 mt-2 border-t border-amber-100 bg-amber-50/50 -mx-3 px-3 py-2 -mb-3">
-                                                        <div className="text-[10px] text-amber-700 font-semibold">
-                                                            🚪 Checked in at {truck.siteName || 'Lions Park'}
+                                                        <div className="text-[10px] text-amber-700 font-medium uppercase tracking-wide">
+                                                            Checked in at {truck.siteName || 'Lions Park'}
                                                         </div>
-                                                        <div className="text-[9px] text-amber-600 mt-0.5">
+                                                        <div className="text-xs text-amber-800 font-semibold mt-1">
                                                             {new Date(truck.actualArrival).toLocaleString('en-ZA', {
                                                                 day: '2-digit',
                                                                 month: 'short',
@@ -792,10 +849,10 @@ export default function LoadingBoardPage() {
                                                 {/* Timestamp for Pending Arrival trucks */}
                                                 {truck.stage === 'pending_arrival' && truck.departureTime && (
                                                     <div className="pt-2 mt-2 border-t border-blue-100 bg-blue-50/50 -mx-3 px-3 py-2 -mb-3">
-                                                        <div className="text-[10px] text-blue-700 font-semibold">
-                                                            🚚 Departed {truck.siteName || 'Lions Park'}
+                                                        <div className="text-[10px] text-blue-700 font-medium uppercase tracking-wide">
+                                                            Departed {truck.siteName || 'Lions Park'}
                                                         </div>
-                                                        <div className="text-[9px] text-blue-600 mt-0.5">
+                                                        <div className="text-xs text-blue-800 font-semibold mt-1">
                                                             {new Date(truck.departureTime).toLocaleString('en-ZA', {
                                                                 day: '2-digit',
                                                                 month: 'short',

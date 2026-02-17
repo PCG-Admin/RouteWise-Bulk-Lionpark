@@ -1,7 +1,7 @@
 "use client";
 
-import { Eye, Edit, Trash2, Upload, X, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Eye, Edit, Trash2, Upload, X, FileSpreadsheet, CheckCircle, AlertCircle, Search, Filter, Package, Clock, Truck, CheckSquare, ChevronDown } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import { OrderDetailSlideOver } from "@/components/OrderDetailSlideOver";
 import Pagination from "@/components/Pagination";
 
@@ -24,6 +24,15 @@ export default function OrdersPage() {
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
+
+    // Filters
+    const [search, setSearch] = useState('');
+    const [filterStatus, setFilterStatus] = useState('all');
+    const [filterProduct, setFilterProduct] = useState('');
+    const [filterCustomer, setFilterCustomer] = useState('');
+    const [filterDateFrom, setFilterDateFrom] = useState('');
+    const [filterDateTo, setFilterDateTo] = useState('');
+    const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
 
     // Fetch orders from API
     useEffect(() => {
@@ -216,12 +225,48 @@ export default function OrdersPage() {
         }
     };
 
+    // Customer options derived from orders
+    const customerOptions = useMemo(() =>
+        Array.from(new Set(orders.map((o: any) => o.clientName).filter(Boolean))).sort() as string[],
+        [orders]
+    );
+
+    // KPI stats
+    const kpiStats = useMemo(() => ({
+        total: orders.length,
+        pending: orders.filter((o: any) => o.status === 'pending').length,
+        inTransit: orders.filter((o: any) => o.status === 'in_transit').length,
+        delivered: orders.filter((o: any) => o.status === 'delivered').length,
+        cancelled: orders.filter((o: any) => o.status === 'cancelled').length,
+    }), [orders]);
+
+    // Filter logic
+    const filteredOrders = orders.filter(order => {
+        const q = search.trim().toLowerCase();
+        if (q) {
+            const haystack = [order.orderNumber, order.product, order.clientName, order.originAddress, order.destinationAddress].join(' ').toLowerCase();
+            if (!haystack.includes(q)) return false;
+        }
+        if (filterStatus !== 'all' && order.status !== filterStatus) return false;
+        if (filterProduct && !order.product?.toLowerCase().includes(filterProduct.toLowerCase())) return false;
+        if (filterCustomer && order.clientName !== filterCustomer) return false;
+        if (filterDateFrom && order.requestedPickupDate) {
+            if (new Date(order.requestedPickupDate).toISOString().split('T')[0] < filterDateFrom) return false;
+        }
+        if (filterDateTo && order.requestedPickupDate) {
+            if (new Date(order.requestedPickupDate).toISOString().split('T')[0] > filterDateTo) return false;
+        }
+        return true;
+    });
+
+    const hasActiveFilters = search || filterStatus !== 'all' || filterProduct || filterCustomer || filterDateFrom || filterDateTo;
+
     // Pagination calculations
-    const totalItems = orders.length;
+    const totalItems = filteredOrders.length;
     const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    const paginatedOrders = orders.slice(startIndex, endIndex);
+    const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
 
     return (
         <div className="space-y-6">
@@ -356,6 +401,28 @@ export default function OrdersPage() {
                                     </select>
                                 </div>
 
+                                {/* Requested Pickup Date */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">Pickup Date</label>
+                                    <input
+                                        type="date"
+                                        value={editingOrder.requestedPickupDate ? new Date(editingOrder.requestedPickupDate).toISOString().split('T')[0] : ''}
+                                        onChange={(e) => setEditingOrder({...editingOrder, requestedPickupDate: e.target.value ? new Date(e.target.value).toISOString() : null})}
+                                        className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+
+                                {/* Requested Delivery Date */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">Delivery Date</label>
+                                    <input
+                                        type="date"
+                                        value={editingOrder.requestedDeliveryDate ? new Date(editingOrder.requestedDeliveryDate).toISOString().split('T')[0] : ''}
+                                        onChange={(e) => setEditingOrder({...editingOrder, requestedDeliveryDate: e.target.value ? new Date(e.target.value).toISOString() : null})}
+                                        className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+
                                 {/* Notes */}
                                 <div className="md:col-span-2">
                                     <label className="block text-sm font-medium text-slate-700 mb-2">Notes</label>
@@ -391,7 +458,7 @@ export default function OrdersPage() {
 
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-slate-900">Orders</h1>
+                    <h1 className="text-3xl font-bold text-slate-900">Orders Dashboard</h1>
                     <p className="text-slate-500">Manage active orders and allocations</p>
                 </div>
                 <button
@@ -401,6 +468,125 @@ export default function OrdersPage() {
                     <Upload className="w-5 h-5" />
                     <span>New Order</span>
                 </button>
+            </div>
+
+            {/* KPI Cards */}
+            {!isLoading && orders.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    {[
+                        { label: 'Total Orders', value: kpiStats.total, icon: Package, color: 'text-slate-700', bg: 'bg-slate-50', iconBg: 'bg-slate-100' },
+                        { label: 'Pending', value: kpiStats.pending, icon: Clock, color: 'text-yellow-700', bg: 'bg-yellow-50', iconBg: 'bg-yellow-100' },
+                        { label: 'In Transit', value: kpiStats.inTransit, icon: Truck, color: 'text-blue-700', bg: 'bg-blue-50', iconBg: 'bg-blue-100' },
+                        { label: 'Delivered', value: kpiStats.delivered, icon: CheckSquare, color: 'text-emerald-700', bg: 'bg-emerald-50', iconBg: 'bg-emerald-100' },
+                        { label: 'Cancelled', value: kpiStats.cancelled, icon: AlertCircle, color: 'text-red-700', bg: 'bg-red-50', iconBg: 'bg-red-100' },
+                    ].map(s => (
+                        <div key={s.label} className={`p-4 rounded-xl border border-slate-200 shadow-sm ${s.bg} flex items-center justify-between gap-3`}>
+                            <div>
+                                <p className="text-xs font-medium text-slate-500">{s.label}</p>
+                                <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</p>
+                            </div>
+                            <div className={`p-2.5 rounded-lg ${s.iconBg}`}>
+                                <s.icon className={`w-5 h-5 ${s.color}`} />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Search & Filters */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
+                <div className="flex flex-col md:flex-row gap-3">
+                    {/* Search */}
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Search by order number, product, customer..."
+                            value={search}
+                            onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+                            className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        />
+                    </div>
+
+                    {/* Status */}
+                    <select
+                        value={filterStatus}
+                        onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-w-[140px]"
+                    >
+                        <option value="all">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="in_transit">In Transit</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+
+                    {/* Product search */}
+                    <input
+                        type="text"
+                        placeholder="Filter by product..."
+                        value={filterProduct}
+                        onChange={(e) => { setFilterProduct(e.target.value); setCurrentPage(1); }}
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-w-[160px]"
+                    />
+
+                    {/* Customer dropdown */}
+                    <div className="relative min-w-[160px]">
+                        {customerDropdownOpen && <div className="fixed inset-0 z-10" onClick={() => setCustomerDropdownOpen(false)} />}
+                        <button
+                            onClick={() => setCustomerDropdownOpen(!customerDropdownOpen)}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none flex items-center justify-between gap-2 bg-white"
+                        >
+                            <span className={filterCustomer ? 'text-slate-900' : 'text-slate-500'}>
+                                {filterCustomer || 'All Customers'}
+                            </span>
+                            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${customerDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {customerDropdownOpen && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 max-h-60 overflow-y-auto">
+                                <div onClick={() => { setFilterCustomer(''); setCurrentPage(1); setCustomerDropdownOpen(false); }}
+                                    className="px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 cursor-pointer border-b border-slate-100">
+                                    All Customers
+                                </div>
+                                {customerOptions.map((c) => (
+                                    <div key={c} onClick={() => { setFilterCustomer(c); setCurrentPage(1); setCustomerDropdownOpen(false); }}
+                                        className={`px-4 py-2.5 text-sm cursor-pointer transition-colors ${filterCustomer === c ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-700 hover:bg-slate-50'}`}>
+                                        {c}
+                                    </div>
+                                ))}
+                                {customerOptions.length === 0 && <div className="px-4 py-3 text-xs text-slate-400 text-center">No customers available</div>}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Date range row */}
+                <div className="flex flex-col md:flex-row items-center gap-3">
+                    <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Pickup Date:</span>
+                    <input
+                        type="date"
+                        value={filterDateFrom}
+                        onChange={(e) => { setFilterDateFrom(e.target.value); setCurrentPage(1); }}
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                    <span className="text-xs text-slate-400">to</span>
+                    <input
+                        type="date"
+                        value={filterDateTo}
+                        onChange={(e) => { setFilterDateTo(e.target.value); setCurrentPage(1); }}
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                    {hasActiveFilters && (
+                        <button
+                            onClick={() => { setSearch(''); setFilterStatus('all'); setFilterProduct(''); setFilterCustomer(''); setFilterDateFrom(''); setFilterDateTo(''); setCurrentPage(1); }}
+                            className="px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg border border-red-200 transition whitespace-nowrap"
+                        >
+                            ✕ Clear Filters
+                        </button>
+                    )}
+                    <span className="ml-auto text-xs text-slate-400">{filteredOrders.length} of {orders.length} orders</span>
+                </div>
             </div>
 
             {/* Confirmation Modal */}
