@@ -52,8 +52,10 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
       // Remove all spaces from plate number for searching
       const cleanedPlateNumber = plateNumber.replace(/\s+/g, '').trim();
 
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       const response = await fetch(
-        `http://localhost:3001/api/truck-allocations?vehicleReg=${encodeURIComponent(cleanedPlateNumber)}`
+        `${API_BASE_URL}/api/truck-allocations?vehicleReg=${encodeURIComponent(cleanedPlateNumber)}`,
+        { credentials: 'include' }
       );
       const result = await response.json();
 
@@ -146,13 +148,15 @@ export default function ManualEntryModal({ onClose, onSuccess }: ManualEntryModa
       const targetStatus = gateType === 'entrance' ? 'arrived' : 'completed';
       const action = gateType === 'entrance' ? 'check in' : 'check out';
 
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       const response = await fetch(
-        `http://localhost:3001/api/truck-allocations/${allocation.id}/status`,
+        `${API_BASE_URL}/api/truck-allocations/${allocation.id}/status`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
+          credentials: 'include',
           body: JSON.stringify({
             status: targetStatus,
           }),

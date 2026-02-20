@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   full_name VARCHAR(100),
   role VARCHAR(20) DEFAULT 'user', -- admin, user, operator
+  site_id INTEGER, -- restricts which frontend this user can log into (null = unrestricted)
   is_active BOOLEAN DEFAULT TRUE,
   last_login TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW(),
@@ -127,6 +128,8 @@ CREATE TABLE IF NOT EXISTS orders (
   -- Locations
   origin_address TEXT NOT NULL,
   destination_address TEXT NOT NULL,
+  origin_site_id INTEGER REFERENCES sites(id),
+  destination_site_id INTEGER REFERENCES sites(id),
 
   -- Scheduling
   requested_pickup_date TIMESTAMP,
@@ -186,6 +189,7 @@ CREATE TABLE IF NOT EXISTS planned_visits (
   scheduled_arrival TIMESTAMP NOT NULL,
   estimated_arrival TIMESTAMP,
   actual_arrival TIMESTAMP,
+  departure_time TIMESTAMP,
 
   -- Status
   status VARCHAR(20) DEFAULT 'scheduled', -- scheduled, in_transit, arrived, completed, cancelled
@@ -325,6 +329,8 @@ CREATE TABLE IF NOT EXISTS allocation_site_journey (
 CREATE INDEX idx_orders_tenant ON orders(tenant_id);
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_order_number ON orders(order_number);
+CREATE INDEX idx_orders_origin_site ON orders(origin_site_id);
+CREATE INDEX idx_orders_destination_site ON orders(destination_site_id);
 CREATE INDEX idx_freight_companies_tenant ON freight_companies(tenant_id);
 CREATE INDEX idx_freight_companies_site ON freight_companies(site_id);
 CREATE INDEX idx_clients_tenant ON clients(tenant_id);
@@ -349,6 +355,16 @@ ON CONFLICT DO NOTHING;
 -- Note: This is for development only. Change in production!
 INSERT INTO users (tenant_id, email, password_hash, full_name, role)
 VALUES ('1', 'admin@routewise.com', '$2b$10$nbODc8jAvD2Dt2UY1s1U1.obvl7IAqtOdTFab77x7T2FKtr3HVy0.', 'Admin User', 'admin')
+ON CONFLICT DO NOTHING;
+
+-- Insert Bulk Admin user (password: BulkConn@Admin2024!)
+INSERT INTO users (tenant_id, email, password_hash, full_name, role, site_id)
+VALUES ('1', 'bulkadmin@routewise.com', '$2b$10$fIrl1ieLYvVwxxOTtZCiiOCWbSTAXRtw1kIBc3JSzIcRrE91Qjw1u', 'Bulk Admin', 'admin', 2)
+ON CONFLICT DO NOTHING;
+
+-- Insert Lions Admin user (password: LionsPark@Admin2024!)
+INSERT INTO users (tenant_id, email, password_hash, full_name, role, site_id)
+VALUES ('1', 'lionsadmin@routewise.com', '$2b$10$fE0DvClGMelzpESss9gwJu9tiJQiLhS2kS7VIfAqF4ZhWgWsErY2O', 'Lions Admin', 'admin', 1)
 ON CONFLICT DO NOTHING;
 
 -- Insert sample sites
@@ -415,7 +431,8 @@ CREATE TABLE IF NOT EXISTS driver_documents (
 CREATE TABLE IF NOT EXISTS parking_tickets (
   id SERIAL PRIMARY KEY,
   tenant_id VARCHAR(50) NOT NULL,
-  truck_allocation_id INTEGER REFERENCES truck_allocations(id) NOT NULL,
+  truck_allocation_id INTEGER REFERENCES truck_allocations(id), -- Nullable to support visits
+  visit_id INTEGER REFERENCES planned_visits(id), -- For non-matched visitor parking tickets
 
   -- Ticket identification
   ticket_number VARCHAR(50) UNIQUE NOT NULL,
@@ -466,7 +483,13 @@ CREATE TABLE IF NOT EXISTS parking_tickets (
   departed_at TIMESTAMP,
 
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  updated_at TIMESTAMP DEFAULT NOW(),
+
+  -- Ensure parking ticket is linked to either a truck allocation OR a visit (not both, not neither)
+  CONSTRAINT check_parking_ticket_reference CHECK (
+    (truck_allocation_id IS NOT NULL AND visit_id IS NULL) OR
+    (truck_allocation_id IS NULL AND visit_id IS NOT NULL)
+  )
 );
 
 -- Indexes for performance
@@ -476,6 +499,7 @@ CREATE INDEX IF NOT EXISTS idx_drivers_transporter ON drivers(transporter_id);
 CREATE INDEX IF NOT EXISTS idx_driver_documents_allocation_id ON driver_documents(allocation_id);
 CREATE INDEX IF NOT EXISTS idx_driver_documents_driver_id ON driver_documents(driver_id);
 CREATE INDEX IF NOT EXISTS idx_parking_tickets_allocation_id ON parking_tickets(truck_allocation_id);
+CREATE INDEX IF NOT EXISTS idx_parking_tickets_visit_id ON parking_tickets(visit_id);
 CREATE INDEX IF NOT EXISTS idx_parking_tickets_ticket_number ON parking_tickets(ticket_number);
 CREATE INDEX IF NOT EXISTS idx_parking_tickets_status ON parking_tickets(status);
 CREATE INDEX IF NOT EXISTS idx_parking_tickets_vehicle_reg ON parking_tickets(vehicle_reg);
@@ -502,3 +526,88 @@ COMMENT ON TABLE drivers IS 'Master driver records with license and induction de
 COMMENT ON TABLE driver_documents IS 'Uploaded driver documents with OCR results and verification status';
 COMMENT ON TABLE parking_tickets IS 'Parking tickets generated for trucks checking in at Lions Park with comprehensive verification details';
 COMMENT ON TABLE allocation_site_journey IS 'Multi-site journey tracking table - maintains independent status history per site for each allocation';
+
+-- Internal Weighbridge Tickets table for Bulk Connections
+-- Stores tickets from Bulk's internal weighbridge system
+CREATE TABLE IF NOT EXISTS bulk_internal_weighbridge_tickets (
+  id SERIAL PRIMARY KEY,
+  tenant_id VARCHAR(50) NOT NULL,
+
+  -- Linked allocation (if matched)
+  truck_allocation_id INTEGER REFERENCES truck_allocations(id),
+  match_status VARCHAR(20) DEFAULT 'unmatched', -- matched, unmatched, partial_match
+
+  -- Ticket identification
+  ticket_number VARCHAR(50) UNIQUE NOT NULL,
+  instruction_order_number VARCHAR(100), -- From "INSTRUCTION / ORDER NO."
+
+  -- Vehicle information
+  truck_reg VARCHAR(20),
+  trailer_reg VARCHAR(20),
+  haulier VARCHAR(200),
+
+  -- Driver information
+  driver_name VARCHAR(200),
+  driver_signature VARCHAR(500), -- Base64 or file path
+  driver_id_number VARCHAR(50),
+
+  -- Order details
+  order_number VARCHAR(100),
+  customer_name VARCHAR(200),
+  product VARCHAR(200),
+  grade VARCHAR(100),
+  destination VARCHAR(200),
+  stockpile VARCHAR(100),
+
+  -- Weight measurements (in kg)
+  gross_mass DECIMAL(10, 2),
+  tare_mass DECIMAL(10, 2),
+  net_mass DECIMAL(10, 2),
+
+  -- Timestamps
+  arrival_time TIMESTAMP,
+  departure_time TIMESTAMP,
+
+  -- Weighbridge clerk information
+  incoming_clerk_email VARCHAR(255),
+  outgoing_clerk_signature VARCHAR(500),
+
+  -- Original PDF
+  pdf_file_path VARCHAR(500),
+  pdf_file_name VARCHAR(255),
+
+  -- OCR Processing
+  ocr_raw_response JSONB, -- Raw OCR response from Gemini
+  ocr_confidence DECIMAL(5, 2), -- Confidence score 0-100
+  ocr_processed_at TIMESTAMP,
+
+  -- Discrepancies
+  has_weight_discrepancy BOOLEAN DEFAULT FALSE,
+  weight_discrepancy_amount DECIMAL(10, 2), -- Difference in kg
+  weight_discrepancy_percentage DECIMAL(5, 2), -- Percentage difference
+  discrepancy_notes TEXT,
+
+  -- User verification
+  verified_by_user BOOLEAN DEFAULT FALSE,
+  verified_by VARCHAR(100),
+  verified_at TIMESTAMP,
+  user_corrections JSONB, -- Any manual corrections made by user
+
+  -- Additional fields
+  comments TEXT,
+  status VARCHAR(20) DEFAULT 'pending', -- pending, verified, flagged, resolved
+
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Indexes for internal weighbridge tickets
+CREATE INDEX IF NOT EXISTS idx_internal_wb_tenant ON bulk_internal_weighbridge_tickets(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_internal_wb_allocation ON bulk_internal_weighbridge_tickets(truck_allocation_id);
+CREATE INDEX IF NOT EXISTS idx_internal_wb_ticket_number ON bulk_internal_weighbridge_tickets(ticket_number);
+CREATE INDEX IF NOT EXISTS idx_internal_wb_truck_reg ON bulk_internal_weighbridge_tickets(truck_reg);
+CREATE INDEX IF NOT EXISTS idx_internal_wb_order_number ON bulk_internal_weighbridge_tickets(order_number);
+CREATE INDEX IF NOT EXISTS idx_internal_wb_match_status ON bulk_internal_weighbridge_tickets(match_status);
+CREATE INDEX IF NOT EXISTS idx_internal_wb_discrepancy ON bulk_internal_weighbridge_tickets(has_weight_discrepancy);
+
+COMMENT ON TABLE bulk_internal_weighbridge_tickets IS 'Internal weighbridge tickets from Bulk Connections weighbridge system - used for weight verification and discrepancy detection';

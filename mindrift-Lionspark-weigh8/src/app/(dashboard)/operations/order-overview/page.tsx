@@ -4,7 +4,7 @@ import { RefreshCw, AlertCircle as AlertIcon, FileText, Search } from "lucide-re
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useMemo } from "react";
 
-const API_BASE_URL = "http://localhost:3001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export default function OrderOverview() {
     const [orders, setOrders] = useState<any[]>([]);
@@ -32,7 +32,7 @@ export default function OrderOverview() {
             const url = siteId
                 ? `${API_BASE_URL}/api/orders?siteId=${siteId}`
                 : `${API_BASE_URL}/api/orders`;
-            const res = await fetch(url);
+            const res = await fetch(url, { credentials: 'include' });
             if (!res.ok) throw new Error('Failed to fetch orders');
             const data = await res.json();
             setOrders(data.data || []);

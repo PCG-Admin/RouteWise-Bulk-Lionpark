@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth, AuthRequest } from '../middleware/auth';
 import { db } from '../db';
 import { freightCompanies } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
@@ -9,9 +10,9 @@ const router = Router();
  * GET /api/freight-companies
  * Get all freight companies (site-filtered)
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { siteId } = req.query;
 
     let query = db
@@ -40,7 +41,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch freight companies',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -49,9 +49,9 @@ router.get('/', async (req, res) => {
  * GET /api/freight-companies/:id
  * Get single freight company by ID
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
 
     const [company] = await db
@@ -79,7 +79,6 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch freight company',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -88,9 +87,9 @@ router.get('/:id', async (req, res) => {
  * POST /api/freight-companies
  * Create new freight company
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const {
       siteId,
       name,
@@ -133,7 +132,6 @@ router.post('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to create freight company',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -142,9 +140,9 @@ router.post('/', async (req, res) => {
  * PUT /api/freight-companies/:id
  * Update freight company
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
     const {
       siteId,
@@ -193,7 +191,6 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update freight company',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -202,9 +199,9 @@ router.put('/:id', async (req, res) => {
  * DELETE /api/freight-companies/:id
  * Delete freight company (soft delete by setting isActive = false)
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
 
     const [deleted] = await db
@@ -235,7 +232,6 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to delete freight company',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth, AuthRequest } from '../middleware/auth';
 import { db } from '../db';
 import { transporters } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
@@ -9,9 +10,9 @@ const router = Router();
  * GET /api/transporters
  * Get all transporters (site-filtered)
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { siteId } = req.query;
 
     let query = db
@@ -40,7 +41,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch transporters',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -49,9 +49,9 @@ router.get('/', async (req, res) => {
  * GET /api/transporters/:id
  * Get single transporter by ID
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
 
     const [transporter] = await db
@@ -79,7 +79,6 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch transporter',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -88,9 +87,9 @@ router.get('/:id', async (req, res) => {
  * POST /api/transporters
  * Create new transporter
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const {
       siteId,
       name,
@@ -133,7 +132,6 @@ router.post('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to create transporter',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -142,9 +140,9 @@ router.post('/', async (req, res) => {
  * PUT /api/transporters/:id
  * Update transporter
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
     const {
       siteId,
@@ -193,7 +191,6 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update transporter',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -202,9 +199,9 @@ router.put('/:id', async (req, res) => {
  * DELETE /api/transporters/:id
  * Delete transporter (soft delete by setting isActive = false)
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
 
     const [deleted] = await db
@@ -235,7 +232,6 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to delete transporter',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

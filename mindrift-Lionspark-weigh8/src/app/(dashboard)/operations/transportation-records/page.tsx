@@ -48,6 +48,8 @@ export default function TransportationRecordsPage() {
     const [showModal, setShowModal] = useState(false);
     const [viewingTicketAllocationId, setViewingTicketAllocationId] = useState<number | null>(null);
     const [validatingAllocationId, setValidatingAllocationId] = useState<number | null>(null);
+    const [validatingVisitId, setValidatingVisitId] = useState<number | null>(null);
+    const [validatingVisitData, setValidatingVisitData] = useState<any>(null);
     const [issuingPermitId, setIssuingPermitId] = useState<number | null>(null);
 
     // Pagination
@@ -87,8 +89,8 @@ export default function TransportationRecordsPage() {
 
             // Filter by site ID for Lions Park (fetch both allocations and visits)
             const allocationsUrl = SITE_ID
-                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}`
-                : `${API_BASE_URL}/api/truck-allocations`;
+                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}&limit=500`
+                : `${API_BASE_URL}/api/truck-allocations?limit=500`;
 
             const visitsUrl = SITE_ID
                 ? `${API_BASE_URL}/api/visits?siteId=${SITE_ID}`
@@ -100,8 +102,8 @@ export default function TransportationRecordsPage() {
 
             // Fetch allocations, visits, and journey data in parallel
             const [allocationsResponse, visitsResponse] = await Promise.all([
-                fetch(allocationsUrl),
-                fetch(visitsUrl)
+                fetch(allocationsUrl, { credentials: 'include' }),
+                fetch(visitsUrl, { credentials: 'include' })
             ]);
 
             if (!allocationsResponse.ok) throw new Error('Failed to fetch truck allocations');
@@ -113,7 +115,7 @@ export default function TransportationRecordsPage() {
             const journeyMap = new Map();
             if (journeyUrl) {
                 try {
-                    const journeyResponse = await fetch(journeyUrl);
+                    const journeyResponse = await fetch(journeyUrl, { credentials: 'include' });
                     if (journeyResponse.ok) {
                         const journeyData = await journeyResponse.json();
                         if (journeyData?.success && journeyData.data) {
@@ -167,6 +169,7 @@ export default function TransportationRecordsPage() {
             const response = await fetch(`${API_BASE_URL}/api/truck-allocations/${allocationId}/issue-permit`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
             });
 
             const result = await response.json();
@@ -205,6 +208,8 @@ export default function TransportationRecordsPage() {
     };
 
     const getVerificationStatusColor = (driverStatus: string | null, ticketStatus: string | null) => {
+        if (driverStatus === 'non_matched_verified') return 'bg-teal-100 text-teal-700 border-teal-200';
+        if (driverStatus === 'non_matched_partial') return 'bg-orange-100 text-orange-700 border-orange-200';
         if (driverStatus === 'non_matched') return 'bg-red-100 text-red-700 border-red-200';
         if (driverStatus === 'ready_for_dispatch') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
         if (driverStatus === 'verified') return 'bg-green-100 text-green-700 border-green-200';
@@ -214,6 +219,8 @@ export default function TransportationRecordsPage() {
     };
 
     const getVerificationStatusText = (driverStatus: string | null, ticketStatus: string | null, loadingStatus: string) => {
+        if (driverStatus === 'non_matched_verified') return 'Non-Matched · Verified';
+        if (driverStatus === 'non_matched_partial') return 'Non-Matched · Partial';
         if (driverStatus === 'non_matched') return 'Non-Matched';
         // Include 'departed' and 'in_transit' as they were checked in at some point
         if (!['arrived', 'weighing', 'completed', 'departed', 'in_transit'].includes(loadingStatus)) return 'Not Checked In';
@@ -267,6 +274,9 @@ export default function TransportationRecordsPage() {
 
         // Verification status filter
         if (filters.verificationStatus !== 'All') {
+            if (filters.verificationStatus === 'Non-Matched' && allocation.driverValidationStatus !== 'non_matched') {
+                return false;
+            }
             if (filters.verificationStatus === 'Verified' && allocation.driverValidationStatus !== 'verified') {
                 return false;
             }
@@ -446,6 +456,7 @@ export default function TransportationRecordsPage() {
                             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         >
                             <option value="All">All</option>
+                            <option value="Non-Matched">Non-Matched</option>
                             <option value="Verified">Verified</option>
                             <option value="Partially Filled">Partially Filled</option>
                             <option value="Pending">Pending</option>
@@ -577,6 +588,15 @@ export default function TransportationRecordsPage() {
                                             <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getVerificationStatusColor(allocation.driverValidationStatus, allocation.parkingTicketStatus)}`}>
                                                 {getVerificationStatusText(allocation.driverValidationStatus, allocation.parkingTicketStatus, allocation.siteStatus || allocation.status)}
                                             </span>
+                                            {/* Issue Parking Ticket button for non-matched visits (optional) */}
+                                            {['non_matched', 'non_matched_partial', 'non_matched_verified'].includes(allocation.driverValidationStatus || '') && allocation.type === 'visit' && (
+                                                <button
+                                                    onClick={() => { setValidatingVisitId(allocation.id); setValidatingVisitData(allocation); }}
+                                                    className="text-orange-600 hover:text-orange-700 text-xs font-medium flex items-center gap-1"
+                                                >
+                                                    <FileText className="w-3 h-3" /> {allocation.parkingTicketNumber ? 'View / Edit Ticket' : 'Issue Parking Ticket'}
+                                                </button>
+                                            )}
                                             {/* Show Complete Validation button for checked-in trucks that are not yet verified (exclude non-matched visits) */}
                                             {['arrived', 'weighing'].includes(allocation.siteStatus || allocation.status) && allocation.driverValidationStatus !== 'verified' && allocation.driverValidationStatus !== 'ready_for_dispatch' && allocation.driverValidationStatus !== 'non_matched' && (
                                                 <button
@@ -647,7 +667,7 @@ export default function TransportationRecordsPage() {
                 />
             )}
 
-            {/* Driver Validation Modal (Editable) */}
+            {/* Driver Validation Modal for matched allocations (Editable) */}
             {validatingAllocationId && (
                 <ParkingTicketModal
                     allocationId={validatingAllocationId}
@@ -655,6 +675,20 @@ export default function TransportationRecordsPage() {
                     onSuccess={() => {
                         fetchAllocations();
                         setValidatingAllocationId(null);
+                    }}
+                />
+            )}
+
+            {/* Parking Ticket Modal for non-matched visits (optional) */}
+            {validatingVisitId && (
+                <ParkingTicketModal
+                    visitId={validatingVisitId}
+                    visitData={validatingVisitData}
+                    onClose={() => { setValidatingVisitId(null); setValidatingVisitData(null); }}
+                    onSuccess={() => {
+                        fetchAllocations();
+                        setValidatingVisitId(null);
+                        setValidatingVisitData(null);
                     }}
                 />
             )}

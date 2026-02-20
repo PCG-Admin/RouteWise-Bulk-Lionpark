@@ -20,7 +20,7 @@ export default function AllowanceManagementPage() {
     const fetchAllowances = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/visits/allowances`);
+            const response = await fetch(`${API_BASE_URL}/visits/allowances`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch allowances');
             const data = await response.json();
             setAllowances(data.allowances || []);

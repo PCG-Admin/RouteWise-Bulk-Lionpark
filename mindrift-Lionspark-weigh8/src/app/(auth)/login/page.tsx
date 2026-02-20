@@ -26,20 +26,17 @@ export default function LoginPage() {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(formData),
+                credentials: 'include', // Allow HttpOnly cookie to be set by backend
+                body: JSON.stringify({ ...formData, siteId: 1 }),
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                // Store the token
-                localStorage.setItem('token', data.token);
-                if (data.user) {
-                    localStorage.setItem('user', JSON.stringify(data.user));
-                }
+                // Token stored in HttpOnly cookie by backend — do not store in localStorage
                 router.push("/operations/loading-board");
             } else {
-                setError(data.message || "Login failed. Please check your credentials.");
+                setError(data.error || "Login failed. Please check your credentials.");
             }
         } catch (err) {
             console.error('Login error:', err);

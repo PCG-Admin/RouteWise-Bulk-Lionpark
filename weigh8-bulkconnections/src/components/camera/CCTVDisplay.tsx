@@ -30,7 +30,7 @@ export function CCTVDisplay() {
   const fetchCameras = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`${API_BASE_URL}/camera/captures`);
+      const response = await fetch(`${API_BASE_URL}/camera/captures`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch cameras');
       const data = await response.json();
       setCameras(data.cameras || []);

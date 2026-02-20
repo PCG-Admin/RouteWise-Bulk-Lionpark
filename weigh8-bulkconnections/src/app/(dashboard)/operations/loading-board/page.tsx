@@ -208,14 +208,21 @@ export default function LoadingBoardPage() {
 
     useEffect(() => {
         fetchTrucks();
+
+        // Auto-refresh every 5 seconds for near-real-time updates
+        const interval = setInterval(() => {
+            fetchTrucks();
+        }, 5000); // 5 seconds
+
+        return () => clearInterval(interval);
     }, []);
 
     const fetchTrucks = async () => {
         try {
             setLoading(true);
 
-            // Fetch allocations
-            const allocationsResponse = await fetch(`http://localhost:3001/api/truck-allocations`);
+            // Fetch allocations — use limit=500 to ensure all active trucks are returned
+            const allocationsResponse = await fetch(`${API_BASE_URL}/truck-allocations?limit=500`, { credentials: 'include' });
             if (!allocationsResponse.ok) throw new Error('Failed to fetch trucks');
             const allocationsData = await allocationsResponse.json();
 
@@ -225,8 +232,8 @@ export default function LoadingBoardPage() {
 
             try {
                 const [lionsJourneyResponse, bulkJourneyResponse] = await Promise.all([
-                    fetch(`http://localhost:3001/api/site-journey/site/1/latest`),
-                    fetch(`http://localhost:3001/api/site-journey/site/2/latest`)
+                    fetch(`${API_BASE_URL}/site-journey/site/1/latest`, { credentials: 'include' }),
+                    fetch(`${API_BASE_URL}/site-journey/site/2/latest`, { credentials: 'include' })
                 ]);
 
                 if (lionsJourneyResponse.ok) {
@@ -290,17 +297,34 @@ export default function LoadingBoardPage() {
                     return {
                         id: allocation.id,
                         plate: allocation.vehicleReg,
+                        vehicleReg: allocation.vehicleReg,
                         transporter: allocation.transporter || 'Unknown',
                         driver: allocation.driverName,
+                        driverName: allocation.driverName,
+                        driverPhone: allocation.driverPhone,
+                        driverId: allocation.driverId,
                         product: allocation.product,
                         customer: allocation.customer,
-                        collection: allocation.origin,
+                        collection: allocation.originAddress || allocation.origin,
                         orderNo: allocation.orderNumber || `ORD-${allocation.orderId}`,
-                        ticketNo: allocation.parkingTicketNumber,
+                        orderNumber: allocation.orderNumber,
+                        ticketNo: allocation.ticketNo,                   // Mine's order reference ticket
+                        parkingTicketNumber: allocation.parkingTicketNumber, // PT... issued at Lions Park on check-in
                         scheduledDate: allocation.scheduledDate,
                         actualArrival: bulkJourney?.timestamp || lionsJourney?.timestamp || allocation.actualArrival,
                         departureTime: allocation.departureTime,
                         siteName: allocation.siteName,
+                        grossWeight: allocation.grossWeight,
+                        tareWeight: allocation.tareWeight,
+                        netWeight: allocation.netWeight,
+                        quantity: allocation.quantity,
+                        unit: allocation.unit,
+                        priority: allocation.priority,
+                        status: allocation.status,
+                        originAddress: allocation.originAddress || allocation.origin,
+                        destinationAddress: allocation.destinationAddress,
+                        destination: allocation.destinationAddress,
+                        createdAt: allocation.createdAt,
                         stage,
                         badges: [],
                         // Include journey status for debugging
@@ -365,7 +389,7 @@ export default function LoadingBoardPage() {
         setSearchedAllocation(null);
 
         try {
-            const response = await fetch(`http://localhost:3001/api/truck-allocations`);
+            const response = await fetch(`${API_BASE_URL}/truck-allocations?limit=500`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to search allocations');
 
             const data = await response.json();
@@ -420,9 +444,10 @@ export default function LoadingBoardPage() {
                 notes: `Manual ${manualGate} gate action for ${searchedAllocation.vehicleReg}`
             };
 
-            const response = await fetch(`http://localhost:3001/api/site-journey`, {
+            const response = await fetch(`${API_BASE_URL}/site-journey`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify(journeyPayload)
             });
 
@@ -810,16 +835,16 @@ export default function LoadingBoardPage() {
                                                         <span className="font-medium text-slate-700 truncate ml-2">{truck.product}</span>
                                                     </div>
                                                 )}
-                                                {truck.ticketNo && (
+                                                {truck.orderNo && (
                                                     <div className="pt-2 mt-2 border-t border-slate-100">
                                                         <div className="flex items-center justify-between">
-                                                            <span className="text-[10px] text-slate-400 uppercase">Ticket</span>
-                                                            <span className="text-[10px] font-bold text-blue-600">{truck.ticketNo}</span>
+                                                            <span className="text-[10px] text-slate-400 uppercase">Order</span>
+                                                            <span className="text-[10px] font-bold text-slate-700">{truck.orderNo}</span>
                                                         </div>
                                                     </div>
                                                 )}
                                                 {truck.scheduledDate && (
-                                                    <div className={cn("flex items-center justify-between", truck.ticketNo ? "" : "pt-2 mt-2 border-t border-slate-100")}>
+                                                    <div className={cn("flex items-center justify-between", (truck.ticketNo || truck.orderNo) ? "" : "pt-2 mt-2 border-t border-slate-100")}>
                                                         <span className="text-[10px] text-slate-400 uppercase">Scheduled</span>
                                                         <span className="text-[10px] font-medium text-slate-600">
                                                             {new Date(truck.scheduledDate).toLocaleDateString('en-ZA', {
@@ -894,9 +919,6 @@ export default function LoadingBoardPage() {
                                                         </div>
                                                     </div>
                                                 )}
-                                                <div className={cn("text-[10px] text-slate-400", truck.ticketNo || truck.scheduledDate ? "mt-1" : "pt-2 mt-2 border-t border-slate-50")}>
-                                                    Order: {truck.orderNo}
-                                                </div>
                                             </div>
 
                                             {/* Badges */}

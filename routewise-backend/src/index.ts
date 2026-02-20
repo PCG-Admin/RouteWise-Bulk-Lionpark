@@ -4,6 +4,9 @@ dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import authRoutes from './routes/auth';
 import ordersRoutes from './routes/orders';
 import bulkOrdersRoutes from './routes/bulk-orders';
@@ -19,20 +22,52 @@ import transportersRoutes from './routes/transporters';
 import driversRoutes from './routes/drivers';
 import visitsRoutes from './routes/visits';
 import siteJourneyRoutes from './routes/site-journey';
+import internalWeighbridgeRoutes from './routes/internal-weighbridge';
 import { anprCheckerService } from './services/anpr-checker';
 import { requestLogger, performanceTracker, performanceMetrics } from './middleware/logger';
 import { getCacheStats } from './utils/cache';
+import { requireAuth, requireAdmin } from './middleware/auth';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+// Security headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow images from different origins (ANPR)
+}));
+
+// CORS — must have explicit origin list in production; never default to wildcard
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : [];
 app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || '*',
+  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
   credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// Cookie parser (must be before routes that read cookies)
+app.use(cookieParser());
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// Rate limiting
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 login attempts per 15 min per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, please try again in 15 minutes.' },
+  skipSuccessfulRequests: true,
+});
+
+app.use('/api', generalLimiter);
 
 // Request logging and performance tracking
 app.use(requestLogger);
@@ -61,8 +96,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Performance stats endpoint
-app.get('/api/stats/performance', async (req, res) => {
+// Performance stats endpoint — admin only
+app.get('/api/stats/performance', requireAuth, requireAdmin, async (req, res) => {
   try {
     const perfStats = performanceMetrics.getStats();
     const cacheStats = await getCacheStats();
@@ -84,13 +119,12 @@ app.get('/api/stats/performance', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch performance stats',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
 
-// Reset performance stats (for testing)
-app.post('/api/stats/reset', (req, res) => {
+// Reset performance stats — admin only
+app.post('/api/stats/reset', requireAuth, requireAdmin, (req, res) => {
   performanceMetrics.reset();
   res.json({
     success: true,
@@ -98,7 +132,8 @@ app.post('/api/stats/reset', (req, res) => {
   });
 });
 
-// Routes
+// Routes — auth limiter applied specifically to login
+app.use('/api/auth/login', authLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/bulk-orders', bulkOrdersRoutes);
@@ -114,6 +149,7 @@ app.use('/api/transporters', transportersRoutes);
 app.use('/api/drivers', driversRoutes);
 app.use('/api/visits', visitsRoutes);
 app.use('/api/site-journey', siteJourneyRoutes);
+app.use('/api/internal-weighbridge', internalWeighbridgeRoutes);
 
 // 404 handler
 app.use((req, res) => {

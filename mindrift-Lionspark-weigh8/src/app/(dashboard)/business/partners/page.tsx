@@ -5,7 +5,7 @@ import { Building2, Users, Truck, UserCircle, Plus, Search, Edit2, Trash2, Check
 import MasterDataTable from '@/components/MasterDataTable';
 import FormModal from '@/components/FormModal';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api`;
 const SITE_ID = 1; // Lions Park
 
 type TabType = 'freight-companies' | 'clients' | 'transporters' | 'drivers';
@@ -105,25 +105,25 @@ export default function PartnersPage() {
   };
 
   const fetchFreightCompanies = async () => {
-    const response = await fetch(`${API_URL}/freight-companies?siteId=${SITE_ID}`);
+    const response = await fetch(`${API_URL}/freight-companies?siteId=${SITE_ID}`, { credentials: 'include' });
     const result = await response.json();
     if (result.success) setFreightCompanies(result.data);
   };
 
   const fetchClients = async () => {
-    const response = await fetch(`${API_URL}/clients?siteId=${SITE_ID}`);
+    const response = await fetch(`${API_URL}/clients?siteId=${SITE_ID}`, { credentials: 'include' });
     const result = await response.json();
     if (result.success) setClients(result.data);
   };
 
   const fetchTransporters = async () => {
-    const response = await fetch(`${API_URL}/transporters?siteId=${SITE_ID}`);
+    const response = await fetch(`${API_URL}/transporters?siteId=${SITE_ID}`, { credentials: 'include' });
     const result = await response.json();
     if (result.success) setTransporters(result.data);
   };
 
   const fetchDrivers = async () => {
-    const response = await fetch(`${API_URL}/drivers?siteId=${SITE_ID}`);
+    const response = await fetch(`${API_URL}/drivers?siteId=${SITE_ID}`, { credentials: 'include' });
     const result = await response.json();
     if (result.success) setDrivers(result.data);
   };
@@ -140,7 +140,7 @@ export default function PartnersPage() {
 
   const handleDelete = async (item: any) => {
     const endpoint = `${API_URL}/${activeTab}/${item.id}`;
-    const response = await fetch(endpoint, { method: 'DELETE' });
+    const response = await fetch(endpoint, { method: 'DELETE', credentials: 'include' });
     const result = await response.json();
     if (result.success) {
       alert('Deleted successfully');
@@ -158,6 +158,7 @@ export default function PartnersPage() {
       const response = await fetch(endpoint, {
         method: editingItem ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ ...formData, siteId: SITE_ID }),
       });
 

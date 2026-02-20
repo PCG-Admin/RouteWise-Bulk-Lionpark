@@ -7,7 +7,7 @@ const router = Router();
  * GET /api/commodity-types
  * Get list of commodity types
  */
-router.get('/commodity-types', async (req, res) => {
+router.get('/commodity-types', requireAuth, async (req, res) => {
   try {
     // Return common commodity types
     const commodityTypes = [
@@ -37,7 +37,6 @@ router.get('/commodity-types', async (req, res) => {
     console.error('Get commodity types error:', error);
     res.status(500).json({
       error: 'Failed to fetch commodity types',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -46,7 +45,7 @@ router.get('/commodity-types', async (req, res) => {
  * GET /api/customers
  * Get list of customers
  */
-router.get('/customers', async (req, res) => {
+router.get('/customers', requireAuth, async (req, res) => {
   try {
     // Return sample customers for now
     const customers = [
@@ -78,7 +77,6 @@ router.get('/customers', async (req, res) => {
     console.error('Get customers error:', error);
     res.status(500).json({
       error: 'Failed to fetch customers',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

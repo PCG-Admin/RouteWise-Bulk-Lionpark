@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import MasterDataTable from '@/components/MasterDataTable';
 import FormModal from '@/components/FormModal';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api`;
 const SITE_ID = 1; // Lions Park
 
 interface FreightCompany {
@@ -43,7 +43,7 @@ export default function FreightCompaniesPage() {
   const fetchCompanies = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/freight-companies?siteId=${SITE_ID}`);
+      const response = await fetch(`${API_URL}/freight-companies?siteId=${SITE_ID}`, { credentials: 'include' });
       const result = await response.json();
       if (result.success) {
         setCompanies(result.data);
@@ -81,6 +81,7 @@ export default function FreightCompaniesPage() {
     try {
       const response = await fetch(`${API_URL}/freight-companies/${company.id}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
       const result = await response.json();
       if (result.success) {
@@ -107,6 +108,7 @@ export default function FreightCompaniesPage() {
       const response = await fetch(url, {
         method: editingCompany ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(formData),
       });
 

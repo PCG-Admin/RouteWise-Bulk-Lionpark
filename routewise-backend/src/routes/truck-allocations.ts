@@ -2,10 +2,11 @@ import { Router } from 'express';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
 import { db } from '../db';
-import { orders, truckAllocations, clients } from '../db/schema';
+import { orders, truckAllocations, clients, parkingTickets } from '../db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { anprCheckerService } from '../services/anpr-checker';
 import { getCached, setCache, invalidateCache } from '../utils/cache';
+import { requireAuth, requireAdmin, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -84,9 +85,9 @@ function parseDate(value: any): Date | null {
  * POST /api/truck-allocations/upload
  * Upload Excel file with truck allocations for an order
  */
-router.post('/upload', upload.single('truckFile'), async (req, res) => {
+router.post('/upload', requireAuth, upload.single('truckFile'), async (req, res) => {
   try {
-    const tenantId = '1'; // Default tenant
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { orderId } = req.body;
 
     if (!req.file) {
@@ -275,7 +276,6 @@ router.post('/upload', upload.single('truckFile'), async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to process truck allocation file',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -284,7 +284,7 @@ router.post('/upload', upload.single('truckFile'), async (req, res) => {
  * GET /api/truck-allocations/anpr-status
  * Get ANPR service status
  */
-router.get('/anpr-status', (req, res) => {
+router.get('/anpr-status', requireAuth, (req, res) => {
   try {
     const status = anprCheckerService.getStatus();
 
@@ -297,7 +297,6 @@ router.get('/anpr-status', (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to get ANPR status',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -306,7 +305,7 @@ router.get('/anpr-status', (req, res) => {
  * POST /api/truck-allocations/anpr-inject-test
  * Manually inject a test plate detection (for testing)
  */
-router.post('/anpr-inject-test', async (req, res) => {
+router.post('/anpr-inject-test', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { plateNumber, direction = 'entry' } = req.body;
 
@@ -331,7 +330,6 @@ router.post('/anpr-inject-test', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to inject test plate',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -342,11 +340,11 @@ router.post('/anpr-inject-test', async (req, res) => {
  * Query params:
  * - siteId: filter by site (for site-specific views)
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
-    const { siteId, page = '1', limit = '1000' } = req.query;
-    const { parkingTickets } = await import('../db/schema');
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+    const { siteId, page = '1', limit = '50' } = req.query;
+    // parkingTickets imported at top of file
 
     // Create cache key based on query parameters
     const cacheKey = `truck-allocations:tenant:${tenantId}:site:${siteId || 'all'}:page:${page}:limit:${limit}`;
@@ -368,7 +366,8 @@ router.get('/', async (req, res) => {
     // Pagination
     const pageNum = parseInt(String(page));
     const limitNum = parseInt(String(limit));
-    const offset = (pageNum - 1) * limitNum;
+    const safeLimit = Math.min(limitNum, 500);
+    const offset = (pageNum - 1) * safeLimit;
 
     // Import sites table
     const { sites } = await import('../db/schema');
@@ -389,7 +388,7 @@ router.get('/', async (req, res) => {
         .leftJoin(sites, eq(truckAllocations.siteId, sites.id))
         .where(and(...conditions))
         .orderBy(desc(truckAllocations.scheduledDate))
-        .limit(limitNum)
+        .limit(safeLimit)
         .offset(offset),
 
       db.select({ count: sql<number>`count(*)` })
@@ -436,9 +435,9 @@ router.get('/', async (req, res) => {
       total: totalCount,
       pagination: {
         page: pageNum,
-        limit: limitNum,
-        totalPages: Math.ceil(totalCount / limitNum),
-        hasMore: pageNum * limitNum < totalCount,
+        limit: safeLimit,
+        totalPages: Math.ceil(totalCount / safeLimit),
+        hasMore: pageNum * safeLimit < totalCount,
       }
     };
 
@@ -451,7 +450,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch truck allocations',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -460,9 +458,9 @@ router.get('/', async (req, res) => {
  * GET /api/truck-allocations/:orderId
  * Get all truck allocations for an order
  */
-router.get('/:orderId', async (req, res) => {
+router.get('/:orderId', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { orderId } = req.params;
 
     const allocations = await db
@@ -484,7 +482,6 @@ router.get('/:orderId', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch truck allocations',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -493,9 +490,9 @@ router.get('/:orderId', async (req, res) => {
  * PUT /api/truck-allocations/:id
  * Update allocation details (vehicle, driver, transporter, weights, scheduled date, notes)
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
 
     // Only allow updating safe allocation-level fields (not status or journey fields)
@@ -558,7 +555,6 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update allocation',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -567,9 +563,9 @@ router.put('/:id', async (req, res) => {
  * PUT /api/truck-allocations/:id/status
  * Update truck allocation status
  */
-router.put('/:id/status', async (req, res) => {
+router.put('/:id/status', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
     const { status } = req.body;
 
@@ -670,7 +666,6 @@ router.put('/:id/status', async (req, res) => {
     if (status === 'arrived') {
       try {
         // Check if parking ticket already exists
-        const { parkingTickets } = await import('../db/schema');
         const existingTicket = await db
           .select()
           .from(parkingTickets)
@@ -681,20 +676,30 @@ router.put('/:id/status', async (req, res) => {
           .limit(1);
 
         if (existingTicket.length === 0) {
-          // Create parking ticket via internal API call
-          const parkingTicketResponse = await fetch(`http://localhost:${process.env.PORT || 3001}/api/parking-tickets`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              allocationId: updated.id,
-              personOnDuty: req.body.personOnDuty || 'System Auto Check-in',
-            }),
-          });
-
-          if (parkingTicketResponse.ok) {
-            const ticketData: any = await parkingTicketResponse.json();
-            console.log(`✓ Auto-created parking ticket ${ticketData.data?.ticketNumber} for allocation ${updated.id}`);
+          // Generate ticket number directly
+          const year = new Date().getFullYear();
+          const prefix = `PT-${year}-`;
+          const latestTicket = await db.select({ ticketNumber: parkingTickets.ticketNumber })
+            .from(parkingTickets)
+            .where(eq(parkingTickets.tenantId, tenantId))
+            .orderBy(desc(parkingTickets.ticketNumber))
+            .limit(1);
+          let sequence = 1;
+          if (latestTicket.length > 0 && latestTicket[0].ticketNumber.startsWith(prefix)) {
+            sequence = parseInt(latestTicket[0].ticketNumber.replace(prefix, '')) + 1;
           }
+          const ticketNumber = `${prefix}${sequence.toString().padStart(6, '0')}`;
+          const [newTicket] = await db.insert(parkingTickets).values({
+            tenantId,
+            truckAllocationId: updated.id,
+            ticketNumber,
+            arrivalDatetime: updated.actualArrival || new Date(),
+            personOnDuty: req.body.personOnDuty || 'System Auto Check-in',
+            terminalNumber: '1',
+            vehicleReg: updated.vehicleReg,
+            status: 'pending',
+          }).returning();
+          console.log(`✓ Auto-created parking ticket ${newTicket.ticketNumber} for allocation ${updated.id}`);
         }
       } catch (ticketError) {
         console.error('Failed to auto-create parking ticket:', ticketError);
@@ -711,7 +716,6 @@ router.put('/:id/status', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update truck allocation status',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -720,9 +724,9 @@ router.put('/:id/status', async (req, res) => {
  * PUT /api/truck-allocations/:id/issue-permit
  * Issue permit for a verified truck (updates driverValidationStatus to ready_for_dispatch)
  */
-router.put('/:id/issue-permit', async (req, res) => {
+router.put('/:id/issue-permit', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
 
     // Verify the truck is in a valid state (checked in and verified)
@@ -803,7 +807,106 @@ router.put('/:id/issue-permit', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to issue permit',
-      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * POST /api/truck-allocations
+ * Create a single truck allocation for an order (manual entry)
+ */
+router.post('/', requireAuth, async (req, res) => {
+  try {
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+    const {
+      orderId, vehicleReg, driverName, driverPhone, driverId,
+      transporter, scheduledDate, grossWeight, tareWeight, netWeight,
+      ticketNo, notes, siteId,
+    } = req.body;
+
+    if (!orderId || !vehicleReg) {
+      return res.status(400).json({ success: false, error: 'orderId and vehicleReg are required' });
+    }
+
+    // Verify order exists
+    const [order] = await db.select().from(orders).where(eq(orders.id, parseInt(orderId))).limit(1);
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    const [created] = await db.insert(truckAllocations).values({
+      tenantId,
+      orderId: parseInt(orderId),
+      vehicleReg: String(vehicleReg).trim().toUpperCase(),
+      driverName: driverName || null,
+      driverPhone: driverPhone || null,
+      driverId: driverId || null,
+      transporter: transporter || null,
+      scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
+      grossWeight: grossWeight ? String(grossWeight) : null,
+      tareWeight: tareWeight ? String(tareWeight) : null,
+      netWeight: netWeight ? String(netWeight) : null,
+      ticketNo: ticketNo || null,
+      notes: notes || null,
+      siteId: siteId ? parseInt(siteId) : (order.destinationSiteId || 1),
+      status: 'scheduled',
+    }).returning();
+
+    await Promise.all([
+      invalidateCache('truck-allocations:*'),
+      invalidateCache('orders:*'),
+    ]);
+
+    res.json({ success: true, data: created });
+  } catch (error) {
+    console.error('Create truck allocation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create truck allocation',
+    });
+  }
+});
+
+/**
+ * DELETE /api/truck-allocations/:id
+ * Delete a single truck allocation
+ */
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+    const allocationId = parseInt(req.params.id);
+
+    if (isNaN(allocationId)) {
+      return res.status(400).json({ success: false, error: 'Invalid allocation ID' });
+    }
+
+    const [allocation] = await db
+      .select()
+      .from(truckAllocations)
+      .where(and(eq(truckAllocations.id, allocationId), eq(truckAllocations.tenantId, tenantId)))
+      .limit(1);
+
+    if (!allocation) {
+      return res.status(404).json({ success: false, error: 'Allocation not found' });
+    }
+
+    // Import related tables for cascade delete
+    const { driverDocuments } = await import('../db/schema');
+    await db.delete(parkingTickets).where(eq(parkingTickets.truckAllocationId, allocationId));
+    await db.delete(driverDocuments).where(eq(driverDocuments.allocationId, allocationId));
+    await db.delete(truckAllocations).where(eq(truckAllocations.id, allocationId));
+
+    await Promise.all([
+      invalidateCache('truck-allocations:*'),
+      invalidateCache('orders:*'),
+    ]);
+
+    res.json({ success: true, message: `Allocation ${allocation.vehicleReg} deleted` });
+  } catch (error) {
+    console.error('Delete allocation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete allocation',
     });
   }
 });

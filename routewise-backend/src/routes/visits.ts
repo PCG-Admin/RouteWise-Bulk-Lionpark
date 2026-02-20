@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { plannedVisits as visits, orders, clients } from '../db/schema';
+import { plannedVisits as visits, orders, clients, parkingTickets } from '../db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { getCached, setCache } from '../utils/cache';
+import { requireAuth, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -10,10 +11,10 @@ const router = Router();
  * GET /api/visits
  * Get all visits (including non-matched plates)
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
-    const { siteId, status, plateNumber, page = '1', limit = '1000' } = req.query;
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+    const { siteId, status, plateNumber, page = '1', limit = '50' } = req.query;
 
     // Create cache key based on query parameters
     const cacheKey = `visits:tenant:${tenantId}:site:${siteId || 'all'}:status:${status || 'all'}:plate:${plateNumber || 'all'}:page:${page}:limit:${limit}`;
@@ -45,7 +46,8 @@ router.get('/', async (req, res) => {
     // Pagination
     const pageNum = parseInt(String(page));
     const limitNum = parseInt(String(limit));
-    const offset = (pageNum - 1) * limitNum;
+    const safeLimit = Math.min(limitNum, 100);
+    const offset = (pageNum - 1) * safeLimit;
 
     // Import sites table
     const { sites } = await import('../db/schema');
@@ -57,14 +59,16 @@ router.get('/', async (req, res) => {
         order: orders,
         client: clients,
         site: sites,
+        parkingTicket: parkingTickets,
       })
         .from(visits)
         .leftJoin(orders, eq(visits.orderId, orders.id))
         .leftJoin(clients, eq(orders.clientId, clients.id))
         .leftJoin(sites, eq(visits.siteId, sites.id))
+        .leftJoin(parkingTickets, eq(parkingTickets.visitId, visits.id))
         .where(and(...conditions))
         .orderBy(desc(visits.actualArrival))
-        .limit(limitNum)
+        .limit(safeLimit)
         .offset(offset),
 
       db.select({ count: sql<number>`count(*)` })
@@ -73,12 +77,14 @@ router.get('/', async (req, res) => {
     ]);
 
     // Flatten the result to match loading board format
-    const flattenedVisits = visitsData.map(({ visit, order, client, site }) => ({
+    const flattenedVisits = visitsData.map(({ visit, order, client, site, parkingTicket }) => ({
       id: visit.id,
       type: 'visit', // Identify this as a visit record
       vehicleReg: visit.plateNumber,
       status: visit.status,
-      driverValidationStatus: 'non_matched', // Indicate this is a non-matched plate
+      driverValidationStatus: visit.status === 'non_matched_verified' ? 'non_matched_verified'
+        : visit.status === 'non_matched_partial' ? 'non_matched_partial'
+        : 'non_matched',
       actualArrival: visit.actualArrival,
       scheduledDate: visit.scheduledArrival,
       departureTime: visit.departureTime,
@@ -91,6 +97,7 @@ router.get('/', async (req, res) => {
       notes: visit.specialInstructions,
       siteId: visit.siteId,
       siteName: site?.siteName || null,
+      parkingTicketNumber: parkingTicket?.ticketNumber || null, // PT number if ticket has been issued
       createdAt: visit.createdAt,
       updatedAt: visit.updatedAt,
     }));
@@ -103,9 +110,9 @@ router.get('/', async (req, res) => {
       total: totalCount,
       pagination: {
         page: pageNum,
-        limit: limitNum,
-        totalPages: Math.ceil(totalCount / limitNum),
-        hasMore: pageNum * limitNum < totalCount,
+        limit: safeLimit,
+        totalPages: Math.ceil(totalCount / safeLimit),
+        hasMore: pageNum * safeLimit < totalCount,
       }
     };
 
@@ -118,7 +125,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch visits',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

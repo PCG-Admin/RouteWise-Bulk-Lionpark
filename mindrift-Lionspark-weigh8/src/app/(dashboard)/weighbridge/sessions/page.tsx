@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import Pagination from "@/components/Pagination";
 
-const API_BASE_URL = "http://localhost:3001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 interface Session {
     id: string;
@@ -37,7 +37,7 @@ export default function SessionsPage() {
         try {
             setLoading(true);
             setError(null);
-            const response = await fetch(`${API_BASE_URL}/api/weighbridge/sessions`);
+            const response = await fetch(`${API_BASE_URL}/api/weighbridge/sessions`, { credentials: 'include' });
             if (!response.ok) {
                 throw new Error('Failed to fetch sessions');
             }

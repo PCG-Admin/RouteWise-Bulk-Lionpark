@@ -123,3 +123,6 @@ deployment-package.*
 **/find-password.ts
 **/test-*.js
 **/debug-*.ts
+backups/
+*.sql
+*.sql.gz

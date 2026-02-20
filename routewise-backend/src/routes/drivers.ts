@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth, AuthRequest } from '../middleware/auth';
 import { db } from '../db';
 import { drivers, transporters } from '../db/schema';
 import { eq, and, desc, isNull } from 'drizzle-orm';
@@ -9,9 +10,9 @@ const router = Router();
  * GET /api/drivers
  * Get all drivers (site-filtered through transporter relationship)
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { siteId, transporterId } = req.query;
 
     // If filtering by site, we need to JOIN with transporters
@@ -69,7 +70,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch drivers',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -78,9 +78,9 @@ router.get('/', async (req, res) => {
  * GET /api/drivers/:id
  * Get single driver by ID with transporter details
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
 
     const result = await db
@@ -118,7 +118,6 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch driver',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -127,9 +126,9 @@ router.get('/:id', async (req, res) => {
  * POST /api/drivers
  * Create new driver
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const {
       firstName,
       lastName,
@@ -187,7 +186,6 @@ router.post('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to create driver',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -196,9 +194,9 @@ router.post('/', async (req, res) => {
  * PUT /api/drivers/:id
  * Update driver
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
     const {
       firstName,
@@ -261,7 +259,6 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update driver',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -270,9 +267,9 @@ router.put('/:id', async (req, res) => {
  * DELETE /api/drivers/:id
  * Delete driver (hard delete since no isActive field)
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
 
     const deleted = await db
@@ -299,7 +296,6 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to delete driver',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -308,9 +304,9 @@ router.delete('/:id', async (req, res) => {
  * PUT /api/drivers/:id/induction
  * Update driver induction status
  */
-router.put('/:id/induction', async (req, res) => {
+router.put('/:id/induction', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
     const { completed } = req.body;
 
@@ -354,7 +350,6 @@ router.put('/:id/induction', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update induction status',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

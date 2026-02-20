@@ -5,11 +5,15 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+if (!process.env.DB_PASSWORD) {
+  throw new Error('DB_PASSWORD environment variable is required');
+}
+
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
   user: process.env.DB_USER || 'routewise',
-  password: process.env.DB_PASSWORD || 'routewise_dev_password',
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'routewise_db',
 
   // Connection pool settings for production performance

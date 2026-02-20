@@ -6,7 +6,9 @@ import TransporterSelect from './TransporterSelect';
 import { createWorker } from 'tesseract.js';
 
 interface ParkingTicketModalProps {
-  allocationId: number;
+  allocationId?: number;
+  visitId?: number;          // For non-matched trucks
+  visitData?: any;           // Pre-populated visit data (vehicleReg, driverName, etc.)
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -62,7 +64,8 @@ interface Driver {
   transporterId: number;
 }
 
-export default function ParkingTicketModal({ allocationId, onClose, onSuccess }: ParkingTicketModalProps) {
+export default function ParkingTicketModal({ allocationId, visitId, visitData, onClose, onSuccess }: ParkingTicketModalProps) {
+  const isVisitMode = !!visitId && !allocationId;
   const [ticket, setTicket] = useState<ParkingTicket | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -119,7 +122,7 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
   useEffect(() => {
     fetchParkingTicket();
     fetchMasterData();
-  }, [allocationId]);
+  }, [allocationId, visitId]);
 
   // Once system transporters load + allocation is known (no existing ticket), normalize the pre-filled transporter name
   useEffect(() => {
@@ -141,22 +144,23 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
 
   const fetchMasterData = async () => {
     try {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       // Fetch freight companies
-      const freightCompaniesRes = await fetch('http://localhost:3001/api/freight-companies?siteId=1');
+      const freightCompaniesRes = await fetch(`${API_BASE_URL}/api/freight-companies?siteId=1`, { credentials: 'include' });
       const freightCompaniesData = await freightCompaniesRes.json();
       if (freightCompaniesData.success) {
         setFreightCompanies(freightCompaniesData.data);
       }
 
-      // Fetch system transporters for fuzzy matching
-      const transportersRes = await fetch('http://localhost:3001/api/transporters');
+      // Fetch system transporters for fuzzy matching — scoped to Lions Park (siteId=1)
+      const transportersRes = await fetch(`${API_BASE_URL}/api/transporters?siteId=1`, { credentials: 'include' });
       const transportersData = await transportersRes.json();
       if (transportersData.success) {
         setSystemTransporters(transportersData.data || []);
       }
 
       // Fetch clients (freight customers)
-      const clientsRes = await fetch('http://localhost:3001/api/clients?siteId=1');
+      const clientsRes = await fetch(`${API_BASE_URL}/api/clients?siteId=1`, { credentials: 'include' });
       const clientsData = await clientsRes.json();
       if (clientsData.success) {
         setClients(clientsData.data);
@@ -168,7 +172,8 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
 
   const fetchDrivers = async (transporterId: number) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/drivers?transporterId=${transporterId}`);
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/drivers?transporterId=${transporterId}`, { credentials: 'include' });
       const result = await response.json();
       if (result.success) {
         setDrivers(result.data);
@@ -181,44 +186,85 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
     }
   };
 
+  const populateFormFromTicket = (data: any) => {
+    setTicket(data);
+    setFormData({
+      personOnDuty: data.personOnDuty || '',
+      terminalNumber: data.terminalNumber || '1',
+      remarks: data.remarks || 'Booked',
+      trailerRegNumber: data.trailerRegNumber || '',
+      driverPermitNumber: data.driverPermitNumber || '',
+      boardNumber: data.boardNumber || '',
+      freightCompanyName: data.freightCompanyName || 'Bulk Connections',
+      deliveryAddress: data.deliveryAddress || '',
+      customerNumber: data.customerNumber || '',
+      customerName: data.customerName || '',
+      customerPhone: data.customerPhone || '',
+      transporterNumber: data.transporterNumber || '',
+      transporterName: data.transporterName || '',
+      transporterPhone: data.transporterPhone || '',
+      driverName: data.driverName || '',
+      driverIdNumber: data.driverIdNumber || '',
+      driverContactNumber: data.driverContactNumber || '',
+    });
+  };
+
   const fetchParkingTicket = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // Fetch allocation data first to pre-populate
-      const allocationRes = await fetch(`http://localhost:3001/api/truck-allocations/${allocationId}`);
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+      // ── Visit (non-matched) mode ──────────────────────────────────────────
+      if (isVisitMode) {
+        // Try to get existing ticket for this visit
+        const ticketRes = await fetch(`${API_BASE_URL}/api/parking-tickets/visit/${visitId}`, { credentials: 'include' });
+        if (ticketRes.ok) {
+          const ticketData = await ticketRes.json();
+          if (ticketData.success && ticketData.data) {
+            populateFormFromTicket(ticketData.data);
+            return;
+          }
+        }
+
+        // No ticket yet — create one automatically for the non-matched vehicle
+        const createRes = await fetch(`${API_BASE_URL}/api/parking-tickets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ visitId }),
+        });
+        const createData = await createRes.json();
+        if (createData.success && createData.data) {
+          populateFormFromTicket(createData.data);
+          // Pre-populate from visitData (may have driver/transporter from ANPR)
+          if (visitData) {
+            setFormData(prev => ({
+              ...prev,
+              driverName: createData.data.driverName || visitData.driverName || '',
+              transporterName: createData.data.transporterName || visitData.transporter || '',
+            }));
+          }
+        } else {
+          setError('Failed to create parking ticket for this vehicle');
+        }
+        return;
+      }
+
+      // ── Allocation (matched) mode ─────────────────────────────────────────
+      const allocationRes = await fetch(`${API_BASE_URL}/api/truck-allocations/${allocationId}`, { credentials: 'include' });
       const allocationData = await allocationRes.json();
 
       if (allocationData.success && allocationData.data) {
         setAllocation(allocationData.data);
       }
 
-      const response = await fetch(`http://localhost:3001/api/parking-tickets/allocation/${allocationId}`);
+      const response = await fetch(`${API_BASE_URL}/api/parking-tickets/allocation/${allocationId}`, { credentials: 'include' });
       const result = await response.json();
 
       if (result.success && result.data) {
-        setTicket(result.data);
-        // Populate form with existing ticket data
-        setFormData({
-          personOnDuty: result.data.personOnDuty || '',
-          terminalNumber: result.data.terminalNumber || '1',
-          remarks: result.data.remarks || 'Booked',
-          trailerRegNumber: result.data.trailerRegNumber || '',
-          driverPermitNumber: result.data.driverPermitNumber || '',
-          boardNumber: result.data.boardNumber || '',
-          freightCompanyName: result.data.freightCompanyName || 'Bulk Connections',
-          deliveryAddress: result.data.deliveryAddress || '',
-          customerNumber: result.data.customerNumber || '',
-          customerName: result.data.customerName || '',
-          customerPhone: result.data.customerPhone || '',
-          transporterNumber: result.data.transporterNumber || '',
-          transporterName: result.data.transporterName || '',
-          transporterPhone: result.data.transporterPhone || '',
-          driverName: result.data.driverName || '',
-          driverIdNumber: result.data.driverIdNumber || '',
-          driverContactNumber: result.data.driverContactNumber || '',
-        });
+        populateFormFromTicket(result.data);
       } else if (allocationData.success && allocationData.data) {
         // No existing ticket, pre-populate from allocation
         const alloc = allocationData.data;
@@ -258,11 +304,13 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
       });
 
       // Update parking ticket
-      const updateResponse = await fetch(`http://localhost:3001/api/parking-tickets/${ticket.id}/process`, {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const updateResponse = await fetch(`${API_BASE_URL}/api/parking-tickets/${ticket.id}/process`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(requestData),
       });
 
@@ -359,9 +407,11 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
   // Quick add handlers
   const handleQuickAddFreight = async (data: any) => {
     try {
-      const response = await fetch('http://localhost:3001/api/freight-companies', {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/freight-companies`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ ...data, siteId: 1 }),
       });
       const result = await response.json();
@@ -377,9 +427,11 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
 
   const handleQuickAddClient = async (data: any) => {
     try {
-      const response = await fetch('http://localhost:3001/api/clients', {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/clients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ ...data, siteId: 1 }),
       });
       const result = await response.json();
@@ -395,9 +447,11 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
 
   const handleQuickAddTransporter = async (data: any) => {
     try {
-      const response = await fetch('http://localhost:3001/api/transporters', {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/transporters`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ ...data, siteId: 1 }),
       });
       const result = await response.json();
@@ -416,9 +470,11 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
 
   const handleQuickAddDriver = async (data: any) => {
     try {
-      const response = await fetch('http://localhost:3001/api/drivers', {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/drivers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ ...data, transporterId: selectedTransporterId }),
       });
       const result = await response.json();
@@ -598,12 +654,17 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
           <div>
             <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
               <FileText className="w-7 h-7 text-blue-600" />
-              Parking Ticket Verification
+              Parking Ticket {isVisitMode ? '— Non-Matched Vehicle' : 'Verification'}
             </h2>
             <p className="text-sm text-slate-600 mt-1">
               Ticket: <span className="font-semibold text-blue-600">{ticket.ticketNumber}</span>
               {' | '}
               Vehicle: <span className="font-semibold">{ticket.vehicleReg}</span>
+              {isVisitMode && (
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-300">
+                  Non-Matched · Validation Optional
+                </span>
+              )}
             </p>
           </div>
           <button
@@ -682,7 +743,7 @@ export default function ParkingTicketModal({ allocationId, onClose, onSuccess }:
                 <label className="block text-xs text-slate-700 mb-1">Reference (Order Number)</label>
                 <input
                   type="text"
-                  value={ticket.reference}
+                  value={ticket.reference || ''}
                   readOnly
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900"
                 />

@@ -7,11 +7,26 @@ import Pagination from "@/components/Pagination";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
 
+interface HistoryDay {
+    date: string;
+    transactions: number;
+    totalWeight: number;
+    avgWeight: string;
+    vehicles: number;
+}
+
+interface TopProduct {
+    name: string;
+    weight: number;
+    transactions: number;
+    percentage: number;
+}
+
 export default function HistoryPage() {
-    const [history, setHistory] = useState([]);
-    const [topProducts, setTopProducts] = useState([]);
+    const [history, setHistory] = useState<HistoryDay[]>([]);
+    const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
 
@@ -22,7 +37,7 @@ export default function HistoryPage() {
     const fetchHistory = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/weighbridge/history`);
+            const response = await fetch(`${API_BASE_URL}/weighbridge/history`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch history');
             const data = await response.json();
             setHistory(data.history || []);

@@ -5,7 +5,7 @@ import MasterDataTable from '@/components/MasterDataTable';
 import FormModal from '@/components/FormModal';
 import { CheckCircle, XCircle } from 'lucide-react';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api`;
 const SITE_ID = 1; // Lions Park
 
 interface Driver {
@@ -66,7 +66,7 @@ export default function DriversPage() {
   const fetchDrivers = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/drivers?siteId=${SITE_ID}`);
+      const response = await fetch(`${API_URL}/drivers?siteId=${SITE_ID}`, { credentials: 'include' });
       const result = await response.json();
       if (result.success) {
         setDrivers(result.data);
@@ -81,7 +81,7 @@ export default function DriversPage() {
 
   const fetchTransporters = async () => {
     try {
-      const response = await fetch(`${API_URL}/transporters?siteId=${SITE_ID}`);
+      const response = await fetch(`${API_URL}/transporters?siteId=${SITE_ID}`, { credentials: 'include' });
       const result = await response.json();
       if (result.success) {
         setTransporters(result.data);
@@ -123,6 +123,7 @@ export default function DriversPage() {
     try {
       const response = await fetch(`${API_URL}/drivers/${driver.id}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
       const result = await response.json();
       if (result.success) {
@@ -149,6 +150,7 @@ export default function DriversPage() {
       const response = await fetch(url, {
         method: editingDriver ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(formData),
       });
 

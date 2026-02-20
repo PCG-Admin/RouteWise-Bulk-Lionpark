@@ -22,7 +22,7 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
             const fetchJourneyHistory = async () => {
                 try {
                     const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-                    const response = await fetch(`${API_BASE_URL}/api/site-journey/allocation/${order.id}`);
+                    const response = await fetch(`${API_BASE_URL}/api/site-journey/allocation/${order.id}`, { credentials: 'include' });
                     if (response.ok) {
                         const data = await response.json();
                         if (data.success && data.data) {
@@ -123,7 +123,8 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
     const fetchParkingTicket = async () => {
         try {
             setLoadingTicket(true);
-            const response = await fetch(`http://localhost:3001/api/parking-tickets/allocation/${order.id}`);
+            const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${API_BASE_URL}/api/parking-tickets/allocation/${order.id}`, { credentials: 'include' });
             const result = await response.json();
             if (result.success && result.data) {
                 setParkingTicket(result.data);
@@ -246,7 +247,7 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
                     </div>
 
                     {/* Truck Allocation Details */}
-                    {(order.vehicleReg || order.grossWeight || order.tareWeight || order.netWeight || order.driverName || order.ticketNo) && (
+                    {(order.vehicleReg || order.grossWeight || order.tareWeight || order.netWeight || order.driverName || order.ticketNo || order.parkingTicketNumber) && (
                         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-200 shadow-sm">
                             <h3 className="font-bold text-slate-900 flex items-center gap-2 mb-4">
                                 <Truck className="w-5 h-5 text-blue-600" />
@@ -285,8 +286,14 @@ export function OrderDetailSlideOver({ order, onClose, onStageChange }: OrderDet
                                     )}
                                     {order.ticketNo && (
                                         <div>
-                                            <p className="text-xs text-slate-500 uppercase">Ticket Number</p>
-                                            <p className="text-sm font-bold text-blue-600">{order.ticketNo}</p>
+                                            <p className="text-xs text-slate-500 uppercase">Mine Order Ticket</p>
+                                            <p className="text-sm font-medium text-slate-900">{order.ticketNo}</p>
+                                        </div>
+                                    )}
+                                    {order.parkingTicketNumber && (
+                                        <div>
+                                            <p className="text-xs text-slate-500 uppercase">Lions Park Parking Ticket</p>
+                                            <p className="text-sm font-bold text-blue-600">{order.parkingTicketNumber}</p>
                                         </div>
                                     )}
                                     {order.scheduledDate && (

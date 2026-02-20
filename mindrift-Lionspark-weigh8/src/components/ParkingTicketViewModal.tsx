@@ -35,8 +35,10 @@ export default function ParkingTicketViewModal({ allocationId, onClose }: Parkin
       setLoading(true);
       setError(null);
 
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       const response = await fetch(
-        `http://localhost:3001/api/parking-tickets/allocation/${allocationId}`
+        `${API_BASE_URL}/api/parking-tickets/allocation/${allocationId}`,
+        { credentials: 'include' }
       );
       const result = await response.json();
 

@@ -49,7 +49,8 @@ export default function TransporterSelect({
   const fetchTransporters = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('http://localhost:3001/api/transporters');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/transporters`, { credentials: 'include' });
       const result = await response.json();
       if (result.success) {
         setTransporters(result.data || []);

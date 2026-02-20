@@ -4,12 +4,7 @@ const nextConfig: NextConfig = {
   /* config options here */
   output: 'standalone',
   reactCompiler: false, // Disabled to fix reload issues
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  // TypeScript and ESLint errors are enforced — do not suppress in production builds
 };
 
 export default nextConfig;

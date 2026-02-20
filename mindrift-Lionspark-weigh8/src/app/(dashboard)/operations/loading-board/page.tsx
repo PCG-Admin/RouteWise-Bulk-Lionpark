@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw, Calendar, Truck, Clock, User, Package, ChevronRight, Search, Filter, MoreHorizontal, AlertCircle, ArrowLeft, Maximize2, Minimize2, X, ChevronDown, CheckCircle, FileText } from "lucide-react";
+import { RefreshCw, Calendar, Truck, Clock, User, Package, ChevronRight, Search, Filter, MoreHorizontal, AlertCircle, ArrowLeft, Maximize2, Minimize2, X, ChevronDown, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useMemo, useEffect } from "react";
 import { OrderDetailSlideOver } from "@/components/OrderDetailSlideOver";
@@ -35,9 +35,10 @@ export default function LoadingBoardPage() {
     const fetchAllocations = async () => {
         try {
             // Filter by site ID for Lions Park (only show allocations for this site)
+            // Use limit=500 to ensure all active allocations are returned for the operational board
             const allocationsUrl = SITE_ID
-                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}`
-                : `${API_BASE_URL}/api/truck-allocations`;
+                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}&limit=500`
+                : `${API_BASE_URL}/api/truck-allocations?limit=500`;
 
             const visitsUrl = SITE_ID
                 ? `${API_BASE_URL}/api/visits?siteId=${SITE_ID}`
@@ -49,9 +50,16 @@ export default function LoadingBoardPage() {
 
             // Fetch allocations and visits
             const [allocationsResponse, visitsResponse] = await Promise.all([
-                fetch(allocationsUrl),
-                fetch(visitsUrl)
+                fetch(allocationsUrl, { credentials: 'include' }),
+                fetch(visitsUrl, { credentials: 'include' })
             ]);
+
+            if (!allocationsResponse.ok) {
+                throw new Error(`Failed to fetch allocations: ${allocationsResponse.status} ${allocationsResponse.statusText}`);
+            }
+            if (!visitsResponse.ok) {
+                throw new Error(`Failed to fetch visits: ${visitsResponse.status} ${visitsResponse.statusText}`);
+            }
 
             const allocationsData = await allocationsResponse.json();
             const visitsData = await visitsResponse.json();
@@ -60,7 +68,7 @@ export default function LoadingBoardPage() {
             const journeyMap = new Map();
             if (journeyUrl) {
                 try {
-                    const journeyResponse = await fetch(journeyUrl);
+                    const journeyResponse = await fetch(journeyUrl, { credentials: 'include' });
                     if (journeyResponse.ok) {
                         const journeyData = await journeyResponse.json();
                         if (journeyData?.success && journeyData.data) {
@@ -116,10 +124,10 @@ export default function LoadingBoardPage() {
     useEffect(() => {
         fetchAllocations();
 
-        // Auto-refresh every 30 seconds for ANPR updates
+        // Auto-refresh every 5 seconds for near-real-time ANPR updates
         const interval = setInterval(() => {
             fetchAllocations();
-        }, 30000); // 30 seconds
+        }, 5000); // 5 seconds
 
         return () => clearInterval(interval);
     }, []);
@@ -136,7 +144,8 @@ export default function LoadingBoardPage() {
         origin: "All Sites",
         transporter: "All Transporters",
         product: "All Products",
-        search: ""
+        search: "",
+        entryType: "All Entries"
     });
 
     // Separate open states for Main view and Modal view to prevent conflict
@@ -144,14 +153,16 @@ export default function LoadingBoardPage() {
         customer: false,
         origin: false,
         transporter: false,
-        product: false
+        product: false,
+        entryType: false
     });
 
     const [isModalFilterOpen, setIsModalFilterOpen] = useState({
         customer: false,
         origin: false,
         transporter: false,
-        product: false
+        product: false,
+        entryType: false
     });
 
     // Normalize helper for case/space-insensitive comparison
@@ -192,7 +203,13 @@ export default function LoadingBoardPage() {
                 allocation.customer, allocation.transporter,
             ].join(' ').toLowerCase().includes(q);
 
-            return matchCustomer && matchOrigin && matchTransporter && matchDate && matchProduct && matchSearch;
+            // Entry type filter
+            const isNonMatched = allocation.driverValidationStatus === 'non_matched';
+            const matchEntryType = filters.entryType === "All Entries" ||
+                (filters.entryType === "Non-Matched Only" && isNonMatched) ||
+                (filters.entryType === "Matched Only" && !isNonMatched);
+
+            return matchCustomer && matchOrigin && matchTransporter && matchDate && matchProduct && matchSearch && matchEntryType;
         });
     }, [allocations, filters]);
 
@@ -213,11 +230,12 @@ export default function LoadingBoardPage() {
             origin: "All Sites",
             transporter: "All Transporters",
             product: "All Products",
-            search: ""
+            search: "",
+            entryType: "All Entries"
         });
     };
 
-    const hasActiveFilters = filters.customer !== "All Customers" || filters.origin !== "All Sites" || filters.transporter !== "All Transporters" || filters.date !== "" || filters.product !== "All Products" || filters.search !== "";
+    const hasActiveFilters = filters.customer !== "All Customers" || filters.origin !== "All Sites" || filters.transporter !== "All Transporters" || filters.date !== "" || filters.product !== "All Products" || filters.search !== "" || filters.entryType !== "All Entries";
 
     // Component for Filter Dropdowns
     const FilterDropdown = ({
@@ -341,6 +359,15 @@ export default function LoadingBoardPage() {
                     isOpen={openState.transporter}
                     setIsOpen={(v) => setOpenState({ ...openState, transporter: v })}
                     onSelect={(v) => setFilters({ ...filters, transporter: v })}
+                />
+
+                <FilterDropdown
+                    label="Entry Type"
+                    value={filters.entryType}
+                    options={["All Entries", "Matched Only", "Non-Matched Only"]}
+                    isOpen={openState.entryType}
+                    setIsOpen={(v) => setOpenState({ ...openState, entryType: v })}
+                    onSelect={(v) => setFilters({ ...filters, entryType: v })}
                 />
 
                 <div className="flex items-center gap-2 shrink-0">
@@ -711,32 +738,34 @@ export default function LoadingBoardPage() {
                                                         </div>
                                                     </div>
                                                 )}
-                                                {/* Driver Validation Status Badge */}
-                                                <div className={cn(
-                                                    "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-semibold",
-                                                    allocation.driverValidationStatus === 'ready_for_dispatch'
-                                                        ? "bg-blue-100 text-blue-700 border border-blue-200"
-                                                        : allocation.driverValidationStatus === 'verified'
-                                                        ? "bg-green-100 text-green-700 border border-green-200"
-                                                        : "bg-yellow-100 text-yellow-700 border border-yellow-200"
-                                                )}>
-                                                    {allocation.driverValidationStatus === 'ready_for_dispatch' ? (
-                                                        <>
-                                                            <CheckCircle className="w-3.5 h-3.5" />
-                                                            <span>Ready for Dispatch</span>
-                                                        </>
-                                                    ) : allocation.driverValidationStatus === 'verified' ? (
-                                                        <>
-                                                            <CheckCircle className="w-3.5 h-3.5" />
-                                                            <span>Driver Verified</span>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <Clock className="w-3.5 h-3.5" />
-                                                            <span>Pending Verification</span>
-                                                        </>
-                                                    )}
-                                                </div>
+                                                {/* Driver Validation Status Badge - not shown for non-matched plates */}
+                                                {allocation.driverValidationStatus !== 'non_matched' && (
+                                                    <div className={cn(
+                                                        "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-semibold",
+                                                        allocation.driverValidationStatus === 'ready_for_dispatch'
+                                                            ? "bg-blue-100 text-blue-700 border border-blue-200"
+                                                            : allocation.driverValidationStatus === 'verified'
+                                                            ? "bg-green-100 text-green-700 border border-green-200"
+                                                            : "bg-yellow-100 text-yellow-700 border border-yellow-200"
+                                                    )}>
+                                                        {allocation.driverValidationStatus === 'ready_for_dispatch' ? (
+                                                            <>
+                                                                <CheckCircle className="w-3.5 h-3.5" />
+                                                                <span>Ready for Dispatch</span>
+                                                            </>
+                                                        ) : allocation.driverValidationStatus === 'verified' ? (
+                                                            <>
+                                                                <CheckCircle className="w-3.5 h-3.5" />
+                                                                <span>Driver Verified</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Clock className="w-3.5 h-3.5" />
+                                                                <span>Pending Verification</span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 
@@ -772,6 +801,7 @@ export default function LoadingBoardPage() {
                 })}
                 </div>
             )}
+
         </div>
     );
 }

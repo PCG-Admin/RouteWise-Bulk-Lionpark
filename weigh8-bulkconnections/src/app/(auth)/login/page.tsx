@@ -19,24 +19,23 @@ export default function LoginPage() {
         setError("");
 
         try {
-            const response = await fetch('http://localhost:3001/api/auth/login', {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+            const response = await fetch(`${apiUrl}/api/auth/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ email, password }),
+                credentials: 'include', // Allow HttpOnly cookie to be set by backend
+                body: JSON.stringify({ email, password, siteId: 2 }),
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                localStorage.setItem('token', data.token);
-                if (data.user) {
-                    localStorage.setItem('user', JSON.stringify(data.user));
-                }
+                // Token stored in HttpOnly cookie by backend — do not store in localStorage
                 router.push("/operations/loading-board");
             } else {
-                setError(data.message || "Invalid email or password");
+                setError(data.error || "Invalid email or password");
             }
         } catch (err) {
             console.error('Login error:', err);

@@ -27,7 +27,7 @@ export default function PortOperationsBoardPage() {
     const fetchTrucks = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/operations/port-operations`);
+            const response = await fetch(`${API_BASE_URL}/operations/port-operations`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch trucks');
             const data = await response.json();
             setTrucks(data.trucks || []);

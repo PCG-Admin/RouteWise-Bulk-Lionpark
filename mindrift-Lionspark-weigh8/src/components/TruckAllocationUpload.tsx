@@ -37,8 +37,10 @@ export function TruckAllocationUpload({ order, onClose, onSuccess }: TruckAlloca
             formData.append('truckFile', file);
             formData.append('orderId', order.id.toString());
 
-            const response = await fetch('http://localhost:3001/api/truck-allocations/upload', {
+            const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+            const response = await fetch(`${API_BASE_URL}/api/truck-allocations/upload`, {
                 method: 'POST',
+                credentials: 'include',
                 body: formData,
             });
 

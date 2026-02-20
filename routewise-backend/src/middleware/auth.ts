@@ -7,18 +7,46 @@ export interface AuthRequest extends Request {
     tenantId: string;
     role: string;
     email: string;
+    siteId: number | null; // null = unrestricted (can access any site)
   };
 }
 
 export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    // Read token from HttpOnly cookie first, then fall back to Authorization header.
+    // Cookie naming convention:
+    //   token_s<siteId>  → site-restricted user (e.g. token_s1, token_s2)
+    //   token_<tenantId> → unrestricted user (e.g. token_1) — fallback
+    //   token            → legacy
+    let token: string | undefined;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
+    const cookies = (req as any).cookies || {};
+    // Prefer site-scoped cookies first (token_s*), then tenant-scoped (token_*), then legacy
+    for (const key of Object.keys(cookies)) {
+      if (/^token_s\d+$/.test(key)) {
+        token = cookies[key];
+        break;
+      }
+    }
+    if (!token) {
+      for (const key of Object.keys(cookies)) {
+        if (key === 'token' || /^token_\d+$/.test(key)) {
+          token = cookies[key];
+          break;
+        }
+      }
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
+    }
+
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
 
     if (!process.env.JWT_SECRET) {
       throw new Error('JWT_SECRET not configured');
@@ -31,6 +59,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
       tenantId: decoded.tenantId,
       role: decoded.role,
       email: decoded.email,
+      siteId: decoded.siteId ?? null,
     };
 
     next();
@@ -45,7 +74,14 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   }
 }
 
-export function generateToken(user: { id: number; tenantId: string; role: string; email: string }): string {
+export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+  if (req.auth?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+export function generateToken(user: { id: number; tenantId: string; role: string; email: string; siteId?: number | null }): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error('JWT_SECRET not configured');
@@ -57,6 +93,7 @@ export function generateToken(user: { id: number; tenantId: string; role: string
       tenantId: user.tenantId,
       role: user.role,
       email: user.email,
+      siteId: user.siteId ?? null,
     },
     secret,
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' } as any

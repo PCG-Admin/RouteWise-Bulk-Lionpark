@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import MasterDataTable from '@/components/MasterDataTable';
 import FormModal from '@/components/FormModal';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api`;
 const SITE_ID = 1; // Lions Park
 
 interface Client {
@@ -43,7 +43,7 @@ export default function ClientsPage() {
   const fetchClients = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/clients?siteId=${SITE_ID}`);
+      const response = await fetch(`${API_URL}/clients?siteId=${SITE_ID}`, { credentials: 'include' });
       const result = await response.json();
       if (result.success) {
         setClients(result.data);
@@ -81,6 +81,7 @@ export default function ClientsPage() {
     try {
       const response = await fetch(`${API_URL}/clients/${client.id}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
       const result = await response.json();
       if (result.success) {
@@ -107,6 +108,7 @@ export default function ClientsPage() {
       const response = await fetch(url, {
         method: editingClient ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(formData),
       });
 

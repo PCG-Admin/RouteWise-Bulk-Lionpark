@@ -22,7 +22,7 @@ export default function StockManagementPage() {
     const fetchPiles = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/operations/stock-management`);
+            const response = await fetch(`${API_BASE_URL}/operations/stock-management`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch piles');
             const data = await response.json();
             setPiles(data.piles || []);

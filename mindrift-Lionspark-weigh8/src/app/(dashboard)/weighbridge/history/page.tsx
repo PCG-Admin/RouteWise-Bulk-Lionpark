@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import Pagination from "@/components/Pagination";
 
-const API_BASE_URL = "http://localhost:3001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 interface HistoryDay {
     date: string;
@@ -38,7 +38,7 @@ export default function HistoryPage() {
         try {
             setLoading(true);
             setError(null);
-            const response = await fetch(`${API_BASE_URL}/api/weighbridge/history`);
+            const response = await fetch(`${API_BASE_URL}/api/weighbridge/history`, { credentials: 'include' });
             if (!response.ok) {
                 throw new Error('Failed to fetch history');
             }

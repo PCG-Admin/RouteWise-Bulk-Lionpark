@@ -19,7 +19,7 @@ export default function VisitorCompliancePage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/visits/compliance`);
+            const response = await fetch(`${API_BASE_URL}/visits/compliance`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch compliance data');
             const data = await response.json();
             setVisitors(data.visitors || []);

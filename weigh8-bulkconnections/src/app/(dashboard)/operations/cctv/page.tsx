@@ -4,7 +4,7 @@ import { AlertCircle, Camera, Cast, Maximize2, MoreVertical, Power, RefreshCw, S
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
 
-const API_BASE_URL = "http://localhost:3001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 interface CameraData {
     id: string;
@@ -37,7 +37,7 @@ export default function CCTVPage() {
         try {
             setLoading(true);
             setError(null);
-            const response = await fetch(`${API_BASE_URL}/api/cameras`);
+            const response = await fetch(`${API_BASE_URL}/api/cameras`, { credentials: 'include' });
             if (!response.ok) {
                 throw new Error('Failed to fetch cameras');
             }
@@ -84,6 +84,7 @@ export default function CCTVPage() {
 
             const response = await fetch(`${API_BASE_URL}/api/anpr-mock/manual-upload`, {
                 method: 'POST',
+                credentials: 'include',
                 body: formData,
             });
 

@@ -45,9 +45,10 @@ export default function DriverVerificationModal({
       formData.append('document', selectedFile);
       formData.append('documentType', documentType);
 
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       const response = await fetch(
-        `http://localhost:3001/api/driver-verification/${allocationId}/upload`,
-        { method: 'POST', body: formData }
+        `${API_BASE_URL}/api/driver-verification/${allocationId}/upload`,
+        { method: 'POST', credentials: 'include', body: formData }
       );
 
       const result = await response.json();
@@ -76,8 +77,10 @@ export default function DriverVerificationModal({
 
     const checkOcr = async () => {
       try {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
         const response = await fetch(
-          `http://localhost:3001/api/driver-verification/${allocationId}/documents`
+          `${API_BASE_URL}/api/driver-verification/${allocationId}/documents`,
+          { credentials: 'include' }
         );
         const result = await response.json();
 
@@ -116,11 +119,13 @@ export default function DriverVerificationModal({
 
   const handleMatchDriver = async () => {
     try {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       const response = await fetch(
-        `http://localhost:3001/api/driver-verification/${allocationId}/match-driver`,
+        `${API_BASE_URL}/api/driver-verification/${allocationId}/match-driver`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             documentId: documentId,
             overrideFields: {},

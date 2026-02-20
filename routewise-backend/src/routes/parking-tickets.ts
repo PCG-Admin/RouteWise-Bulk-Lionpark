@@ -1,6 +1,7 @@
 import { Router } from 'express';
+import { requireAuth, AuthRequest } from '../middleware/auth';
 import { db } from '../db';
-import { parkingTickets, truckAllocations, orders, clients, transporters, drivers } from '../db/schema';
+import { parkingTickets, truckAllocations, orders, clients, transporters, drivers, plannedVisits } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { invalidateCache } from '../utils/cache';
 
@@ -40,18 +41,83 @@ async function generateTicketNumber(tenantId: string): Promise<string> {
  * POST /api/parking-tickets
  * Create a new parking ticket (called automatically on check-in)
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
-    const { allocationId, personOnDuty } = req.body;
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+    const { allocationId, visitId, personOnDuty } = req.body;
 
-    if (!allocationId) {
+    if (!allocationId && !visitId) {
       return res.status(400).json({
         success: false,
-        error: 'allocationId is required',
+        error: 'allocationId or visitId is required',
       });
     }
 
+    // ── Non-matched visit path ────────────────────────────────────────────────
+    if (visitId && !allocationId) {
+      // Check if a ticket already exists for this visit
+      const existingVisitTicket = await db
+        .select()
+        .from(parkingTickets)
+        .where(and(
+          eq(parkingTickets.visitId, parseInt(visitId)),
+          eq(parkingTickets.tenantId, tenantId)
+        ))
+        .limit(1);
+
+      if (existingVisitTicket.length > 0) {
+        return res.json({
+          success: true,
+          data: existingVisitTicket[0],
+          message: 'Parking ticket already exists for this visit',
+        });
+      }
+
+      // Get visit record to pre-populate ticket
+      const [visitRecord] = await db
+        .select()
+        .from(plannedVisits)
+        .where(and(
+          eq(plannedVisits.id, parseInt(visitId)),
+          eq(plannedVisits.tenantId, tenantId)
+        ))
+        .limit(1);
+
+      if (!visitRecord) {
+        return res.status(404).json({ success: false, error: 'Visit not found' });
+      }
+
+      const ticketNumber = await generateTicketNumber(tenantId);
+
+      const [newTicket] = await db
+        .insert(parkingTickets)
+        .values({
+          tenantId,
+          visitId: parseInt(visitId),
+          ticketNumber,
+          arrivalDatetime: visitRecord.actualArrival || new Date(),
+          personOnDuty: personOnDuty || 'System',
+          terminalNumber: '1',
+          vehicleReg: visitRecord.plateNumber,
+          status: 'pending',
+          remarks: 'Not Booked',
+          transporterName: visitRecord.transporterName || '',
+          driverName: visitRecord.driverName || '',
+          driverContactNumber: visitRecord.driverPhone || '',
+          freightCompanyName: 'Bulk Connections',
+        })
+        .returning();
+
+      console.log(`✓ Created parking ticket ${ticketNumber} for non-matched visit ${visitId}`);
+
+      return res.json({
+        success: true,
+        data: newTicket,
+        message: 'Parking ticket created for non-matched vehicle',
+      });
+    }
+
+    // ── Matched allocation path ───────────────────────────────────────────────
     // Check if parking ticket already exists for this allocation
     const existingTicket = await db
       .select()
@@ -164,7 +230,6 @@ router.post('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to create parking ticket',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -173,9 +238,9 @@ router.post('/', async (req, res) => {
  * GET /api/parking-tickets/:allocationId
  * Get parking ticket for a specific truck allocation
  */
-router.get('/allocation/:allocationId', async (req, res) => {
+router.get('/allocation/:allocationId', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { allocationId } = req.params;
 
     const [ticket] = await db
@@ -203,8 +268,39 @@ router.get('/allocation/:allocationId', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch parking ticket',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
+  }
+});
+
+/**
+ * GET /api/parking-tickets/visit/:visitId
+ * Get parking ticket for a non-matched visit
+ */
+router.get('/visit/:visitId', requireAuth, async (req, res) => {
+  try {
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+    const { visitId } = req.params;
+
+    const [ticket] = await db
+      .select()
+      .from(parkingTickets)
+      .where(and(
+        eq(parkingTickets.visitId, parseInt(visitId)),
+        eq(parkingTickets.tenantId, tenantId)
+      ))
+      .limit(1);
+
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        error: 'Parking ticket not found for this visit',
+      });
+    }
+
+    res.json({ success: true, data: ticket });
+  } catch (error) {
+    console.error('Get visit parking ticket error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch parking ticket' });
   }
 });
 
@@ -212,9 +308,9 @@ router.get('/allocation/:allocationId', async (req, res) => {
  * GET /api/parking-tickets
  * List all parking tickets with filters
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { status, vehicleReg, dateFrom, dateTo } = req.query;
 
     let conditions: any[] = [eq(parkingTickets.tenantId, tenantId)];
@@ -242,7 +338,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch parking tickets',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -251,9 +346,9 @@ router.get('/', async (req, res) => {
  * PUT /api/parking-tickets/:id
  * Update parking ticket with verification details
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
     const updateData = req.body;
 
@@ -287,7 +382,6 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update parking ticket',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -296,9 +390,9 @@ router.put('/:id', async (req, res) => {
  * POST /api/parking-tickets/:id/process
  * Mark parking ticket as processed and update driver validation status
  */
-router.post('/:id/process', async (req, res) => {
+router.post('/:id/process', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
     const { processedBy, ...ticketUpdates } = req.body;
 
@@ -382,17 +476,31 @@ router.post('/:id/process', async (req, res) => {
       transporterName: updatedTicket.transporterName,
     });
 
-    // Update truck allocation driver validation status
-    await db
-      .update(truckAllocations)
-      .set({
-        driverValidationStatus: driverValidationStatus,
-        updatedAt: new Date(),
-      })
-      .where(and(
-        eq(truckAllocations.id, ticket.truckAllocationId),
-        eq(truckAllocations.tenantId, tenantId)
-      ));
+    // Update truck allocation driver validation status (matched trucks only)
+    if (ticket.truckAllocationId) {
+      await db
+        .update(truckAllocations)
+        .set({
+          driverValidationStatus: driverValidationStatus,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(truckAllocations.id, ticket.truckAllocationId),
+          eq(truckAllocations.tenantId, tenantId)
+        ));
+    }
+
+    // For non-matched visits: update visit status to reflect verification
+    if (ticket.visitId) {
+      const visitStatus = allFieldsFilled ? 'non_matched_verified' : 'non_matched_partial';
+      await db
+        .update(plannedVisits)
+        .set({ status: visitStatus, updatedAt: new Date() })
+        .where(and(
+          eq(plannedVisits.id, ticket.visitId),
+          eq(plannedVisits.tenantId, tenantId)
+        ));
+    }
 
     // Invalidate cache after updating verification status
     await invalidateCache('truck-allocations:*');
@@ -437,7 +545,6 @@ router.post('/:id/process', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to process parking ticket',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -446,9 +553,9 @@ router.post('/:id/process', async (req, res) => {
  * POST /api/parking-tickets/:id/depart
  * Mark truck as departed and calculate hours in lot
  */
-router.post('/:id/depart', async (req, res) => {
+router.post('/:id/depart', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { id } = req.params;
 
     const [ticket] = await db
@@ -492,7 +599,6 @@ router.post('/:id/depart', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to mark truck as departed',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

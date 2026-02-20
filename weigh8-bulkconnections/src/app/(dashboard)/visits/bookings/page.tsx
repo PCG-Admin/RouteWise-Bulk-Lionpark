@@ -23,7 +23,7 @@ export default function BookingsManagementPage() {
     const fetchBookings = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/visits/bookings`);
+            const response = await fetch(`${API_BASE_URL}/visits/bookings`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch bookings');
             const data = await response.json();
             setBookings(data.bookings || []);

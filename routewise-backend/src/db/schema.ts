@@ -19,6 +19,8 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   fullName: varchar('full_name', { length: 100 }),
   role: varchar('role', { length: 20 }).notNull().default('user'),
+  // siteId restricts which frontend this user can log into (null = unrestricted)
+  siteId: integer('site_id'),
   isActive: boolean('is_active').default(true),
   lastLogin: timestamp('last_login'),
   createdAt: timestamp('created_at').defaultNow(),

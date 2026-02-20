@@ -1,16 +1,28 @@
 "use client";
 
-import { Search, Filter, ArrowUpDown, FileText, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { Search, Filter, ArrowUpDown, FileText, CheckCircle2, Clock, AlertCircle, Activity, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
+import InternalWeighbridgeUploadModal from "@/components/InternalWeighbridgeUploadModal";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+interface Transaction {
+    id: string;
+    date: string;
+    vehicle: string;
+    operator: string;
+    product: string;
+    weight: number;
+    status: 'completed' | 'pending' | 'error';
+}
 
 export default function InternalWeighbridgePage() {
-    const [transactions, setTransactions] = useState([]);
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
     useEffect(() => {
         fetchTransactions();
@@ -19,10 +31,10 @@ export default function InternalWeighbridgePage() {
     const fetchTransactions = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/weighbridge/internal`);
+            const response = await fetch(`${API_BASE_URL}/api/internal-weighbridge/tickets`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch transactions');
             const data = await response.json();
-            setTransactions(data.transactions || []);
+            setTransactions(data.data || []);
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -46,6 +58,13 @@ export default function InternalWeighbridgePage() {
                         <p>Showing {filteredTransactions.length} of {transactions.length} transactions</p>
                     </div>
                 </div>
+                <button
+                    onClick={() => setUploadModalOpen(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm"
+                >
+                    <Upload className="w-5 h-5" />
+                    Upload Ticket
+                </button>
             </div>
 
             {/* Filters */}
@@ -66,7 +85,7 @@ export default function InternalWeighbridgePage() {
                         All Operators
                     </button>
                     <button className="flex items-center px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-50 transition text-slate-700 shadow-sm">
-                        <ActivityIcon className="w-4 h-4 mr-2" />
+                        <Activity className="w-4 h-4 mr-2" />
                         All Status
                     </button>
                 </div>
@@ -147,6 +166,15 @@ export default function InternalWeighbridgePage() {
                     </div>
                 )}
             </div>
+
+            {/* Upload Modal */}
+            <InternalWeighbridgeUploadModal
+                isOpen={uploadModalOpen}
+                onClose={() => setUploadModalOpen(false)}
+                onSuccess={() => {
+                    fetchTransactions();
+                }}
+            />
         </div>
     );
 }

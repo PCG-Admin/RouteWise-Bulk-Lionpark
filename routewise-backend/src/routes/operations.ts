@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db';
 import { truckAllocations, orders, clients } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { requireAuth, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -46,9 +47,9 @@ function mapStatusToBulkStage(status: string): string | null {
  * GET /api/operations/loading-board
  * Get trucks for Bulks loading board with stage mapping
  */
-router.get('/loading-board', async (req, res) => {
+router.get('/loading-board', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
 
     const allocations = await db
       .select({
@@ -112,7 +113,6 @@ router.get('/loading-board', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch loading board data',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -121,9 +121,9 @@ router.get('/loading-board', async (req, res) => {
  * GET /api/operations/port-operations
  * Get trucks for port operations board (similar to loading board)
  */
-router.get('/port-operations', async (req, res) => {
+router.get('/port-operations', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
 
     const allocations = await db
       .select({
@@ -175,7 +175,6 @@ router.get('/port-operations', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch port operations data',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

@@ -7,6 +7,7 @@ import path from 'path';
 import { db } from '../db';
 import { drivers, driverDocuments, truckAllocations } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
+import { requireAuth, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -19,7 +20,9 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueId = randomUUID();
-    const ext = path.extname(file.originalname);
+    let ext = path.extname(file.originalname);
+    const safeExts = ['.jpg', '.jpeg', '.png', '.webp'];
+    if (!safeExts.includes(ext.toLowerCase())) { ext = '.bin'; }
     cb(null, `${uniqueId}${ext}`);
   }
 });
@@ -41,9 +44,9 @@ const upload = multer({
  * POST /api/driver-verification/:allocationId/upload
  * Upload driver document (license, ID, etc.)
  */
-router.post('/:allocationId/upload', upload.single('document'), async (req, res) => {
+router.post('/:allocationId/upload', requireAuth, upload.single('document'), async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { allocationId } = req.params;
     const { documentType } = req.body; // 'license', 'id', 'passport', 'permit', 'other'
 
@@ -110,7 +113,6 @@ router.post('/:allocationId/upload', upload.single('document'), async (req, res)
     res.status(500).json({
       success: false,
       error: 'Failed to upload document',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -209,9 +211,9 @@ function extractDriverInfo(text: string): any {
  * GET /api/driver-verification/:allocationId/documents
  * Get all documents for an allocation
  */
-router.get('/:allocationId/documents', async (req, res) => {
+router.get('/:allocationId/documents', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { allocationId } = req.params;
 
     const documents = await db
@@ -233,7 +235,6 @@ router.get('/:allocationId/documents', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch documents',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -242,9 +243,9 @@ router.get('/:allocationId/documents', async (req, res) => {
  * POST /api/driver-verification/:allocationId/match-driver
  * Match/create driver from OCR data
  */
-router.post('/:allocationId/match-driver', async (req, res) => {
+router.post('/:allocationId/match-driver', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { allocationId } = req.params;
     const { documentId, overrideFields } = req.body;
 
@@ -347,7 +348,6 @@ router.post('/:allocationId/match-driver', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to match/create driver',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -356,7 +356,7 @@ router.post('/:allocationId/match-driver', async (req, res) => {
  * PUT /api/driver-verification/:documentId/verify
  * Manually verify a document
  */
-router.put('/:documentId/verify', async (req, res) => {
+router.put('/:documentId/verify', requireAuth, async (req, res) => {
   try {
     const { documentId } = req.params;
     const { verificationStatus, verificationNotes } = req.body;
@@ -397,7 +397,6 @@ router.put('/:documentId/verify', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to verify document',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -406,7 +405,7 @@ router.put('/:documentId/verify', async (req, res) => {
  * PUT /api/driver-verification/drivers/:driverId/induction
  * Update driver induction status
  */
-router.put('/drivers/:driverId/induction', async (req, res) => {
+router.put('/drivers/:driverId/induction', requireAuth, async (req, res) => {
   try {
     const { driverId } = req.params;
     const { completed } = req.body;
@@ -448,7 +447,6 @@ router.put('/drivers/:driverId/induction', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update induction status',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

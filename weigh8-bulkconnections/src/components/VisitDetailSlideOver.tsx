@@ -20,8 +20,8 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
         if (truck?.id) {
             const fetchJourneyHistory = async () => {
                 try {
-                    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
-                    const response = await fetch(`${API_BASE_URL}/api/site-journey/allocation/${truck.id}`);
+                    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001/api';
+                    const response = await fetch(`${API_BASE_URL}/site-journey/allocation/${truck.id}`, { credentials: 'include' });
                     if (response.ok) {
                         const data = await response.json();
                         if (data.success && data.data) {
@@ -54,7 +54,7 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                             <Truck className="w-6 h-6" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-slate-900">{truck.plate}</h2>
+                            <h2 className="text-xl font-bold text-slate-900">{truck.plate || truck.vehicleReg}</h2>
                             <p className="text-sm text-slate-500">Visit ID: VST-{truck.id}882</p>
                         </div>
                     </div>
@@ -110,7 +110,7 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                             </div>
 
                             {/* Truck Allocation Details */}
-                            {(truck.plate || truck.grossWeight || truck.tareWeight || truck.netWeight || truck.driver || truck.ticketNo) && (
+                            {(truck.plate || truck.vehicleReg || truck.grossWeight || truck.tareWeight || truck.netWeight || truck.driver || truck.driverName || truck.ticketNo) && (
                                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-200 shadow-sm">
                                     <h3 className="font-bold text-slate-900 flex items-center gap-2 mb-4">
                                         <Truck className="w-5 h-5 text-blue-600" />
@@ -121,11 +121,11 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                                         {/* Vehicle & Transport Info */}
                                         <div className="bg-white p-4 rounded-lg border border-blue-100 space-y-3">
                                             <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wide mb-3">Vehicle & Transport</h4>
-                                            {truck.plate && (
+                                            {(truck.plate || truck.vehicleReg) && (
                                                 <div>
                                                     <p className="text-xs text-slate-500 uppercase">Vehicle Registration</p>
                                                     <p className="text-sm font-bold text-slate-900 font-mono bg-slate-100 px-2 py-1 rounded inline-block mt-1">
-                                                        {truck.plate}
+                                                        {truck.plate || truck.vehicleReg}
                                                     </p>
                                                 </div>
                                             )}
@@ -149,8 +149,14 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                                             )}
                                             {truck.ticketNo && (
                                                 <div>
-                                                    <p className="text-xs text-slate-500 uppercase">Ticket Number</p>
-                                                    <p className="text-sm font-bold text-blue-600">{truck.ticketNo}</p>
+                                                    <p className="text-xs text-slate-500 uppercase">Mine Order Ticket</p>
+                                                    <p className="text-sm font-medium text-slate-900">{truck.ticketNo}</p>
+                                                </div>
+                                            )}
+                                            {truck.parkingTicketNumber && (
+                                                <div>
+                                                    <p className="text-xs text-slate-500 uppercase">Lions Park Parking Ticket</p>
+                                                    <p className="text-sm font-bold text-blue-600">{truck.parkingTicketNumber}</p>
                                                 </div>
                                             )}
                                             {truck.scheduledDate && (
@@ -169,16 +175,16 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                                         </div>
 
                                         {/* Driver Info */}
-                                        {(truck.driver || truck.driverPhone || truck.driverId) && (
+                                        {(truck.driver || truck.driverName || truck.driverPhone || truck.driverId) && (
                                             <div className="bg-white p-4 rounded-lg border border-blue-100 space-y-3">
                                                 <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wide mb-3 flex items-center gap-2">
                                                     <User className="w-3 h-3" />
                                                     Driver Information
                                                 </h4>
-                                                {truck.driver && (
+                                                {(truck.driver || truck.driverName) && (
                                                     <div>
                                                         <p className="text-xs text-slate-500 uppercase">Name</p>
-                                                        <p className="text-sm font-medium text-slate-900">{truck.driver}</p>
+                                                        <p className="text-sm font-medium text-slate-900">{truck.driver || truck.driverName}</p>
                                                     </div>
                                                 )}
                                                 {truck.driverPhone && (
@@ -265,7 +271,7 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                                     <div className="space-y-3">
                                         <div>
                                             <p className="text-xs text-slate-500 uppercase">Order Number</p>
-                                            <p className="text-sm font-medium text-slate-900">{truck.orderNo || 'N/A'}</p>
+                                            <p className="text-sm font-medium text-slate-900">{truck.orderNo || truck.orderNumber || 'N/A'}</p>
                                         </div>
                                         <div>
                                             <p className="text-xs text-slate-500 uppercase">Product</p>
@@ -342,7 +348,7 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
 
                     {activeTab === "timeline" && (() => {
                         // Build dynamic timeline based on actual truck data
-                        const timelineEvents = [];
+                        const timelineEvents: Array<{ event: string; timestamp?: string | null; active: boolean; color?: string }> = [];
 
                         // 1. Order/Booking Created
                         if (truck.createdAt || truck.scheduledDate) {
@@ -384,16 +390,6 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                                 });
                             }
                         });
-
-                        // 7. Loading Completed (placeholder for future)
-                        if (truck.stage === 'departed' && truck.netWeight) {
-                            timelineEvents.push({
-                                event: "Loading Completed",
-                                timestamp: null,
-                                active: false,
-                                color: "amber"
-                            });
-                        }
 
                         // Sort timeline events by timestamp (chronological order)
                         timelineEvents.sort((a, b) => {
@@ -441,16 +437,16 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
                                             <div key={i} className="relative">
                                                 <div className={cn(
                                                     "absolute -left-[29px] top-1 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-white",
-                                                    step.active ? getEventColor(step.color).split(' ')[0] + ' ' + getEventColor(step.color).split(' ')[1] : "border-slate-300 text-slate-300"
+                                                    step.active ? getEventColor(step.color || 'blue').split(' ')[0] + ' ' + getEventColor(step.color || 'blue').split(' ')[1] : "border-slate-300 text-slate-300"
                                                 )}>
-                                                    <div className={cn("w-2 h-2 rounded-full", step.active ? getEventColor(step.color).split(' ')[2] : "bg-transparent")} />
+                                                    <div className={cn("w-2 h-2 rounded-full", step.active ? getEventColor(step.color || 'blue').split(' ')[2] : "bg-transparent")} />
                                                 </div>
                                                 <div>
                                                     <p className={cn("text-sm font-semibold mb-1", step.active ? "text-slate-900" : "text-slate-500")}>
                                                         {step.event}
                                                     </p>
                                                     <p className="text-xs text-slate-600 font-medium">
-                                                        {formatTimestamp(step.timestamp)}
+                                                        {formatTimestamp(step.timestamp || null)}
                                                     </p>
                                                 </div>
                                             </div>

@@ -214,7 +214,55 @@ router.post('/upload', requireAuth, upload.single('excelFile'), async (req: Auth
     console.error('Order upload error:', error);
     res.status(500).json({
       error: 'Failed to upload orders',
-      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * POST /api/orders
+ * Manually create a single order (no Excel upload)
+ */
+router.post('/', requireAuth, async (req, res) => {
+  try {
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+
+    const {
+      orderNumber, product, clientName, quantity, unit,
+      originAddress, destinationAddress, status, priority,
+      requestedPickupDate, requestedDeliveryDate, notes, destinationSiteId,
+    } = req.body;
+
+    if (!product) {
+      return res.status(400).json({ success: false, error: 'Product is required' });
+    }
+
+    const finalOrderNumber = orderNumber?.trim() || `ORD-${Date.now()}`;
+
+    const [created] = await db.insert(orders).values({
+      tenantId,
+      orderNumber: finalOrderNumber,
+      product: String(product).trim(),
+      clientName: clientName || null,
+      quantity: quantity ? String(quantity) : '1',
+      unit: unit || 'shipment',
+      originAddress: originAddress || '',
+      destinationAddress: destinationAddress || '',
+      status: status || 'pending',
+      priority: priority || 'normal',
+      specialInstructions: notes || null,
+      requestedPickupDate: requestedPickupDate ? new Date(requestedPickupDate) : null,
+      requestedDeliveryDate: requestedDeliveryDate ? new Date(requestedDeliveryDate) : null,
+      destinationSiteId: destinationSiteId ? parseInt(destinationSiteId) : null,
+    }).returning();
+
+    await invalidateCache('orders:*');
+
+    res.json({ success: true, data: created });
+  } catch (error) {
+    console.error('Create order error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create order',
     });
   }
 });
@@ -227,10 +275,10 @@ router.post('/upload', requireAuth, upload.single('excelFile'), async (req: Auth
  * - search: search in order_number, product, client_name
  * - siteId: filter by destination site (for site-specific views)
  */
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1'; // Default tenant for development
-    const { status, search, siteId, page = '1', limit = '1000' } = req.query;
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+    const { status, search, siteId, page = '1', limit = '50' } = req.query;
 
     // Create cache key based on query parameters
     const cacheKey = `orders:tenant:${tenantId}:status:${status || 'all'}:site:${siteId || 'all'}:search:${search || 'none'}:page:${page}:limit:${limit}`;
@@ -269,15 +317,52 @@ router.get('/', async (req, res) => {
     // Pagination
     const pageNum = parseInt(String(page));
     const limitNum = parseInt(String(limit));
-    const offset = (pageNum - 1) * limitNum;
+    const safeLimit = Math.min(limitNum, 500);
+    const offset = (pageNum - 1) * safeLimit;
 
     // Execute query with pagination - parallel queries for data + count
     const [results, countResult] = await Promise.all([
-      db.select()
+      db.select({
+        id: orders.id,
+        tenantId: orders.tenantId,
+        orderNumber: orders.orderNumber,
+        clientId: orders.clientId,
+        clientName: orders.clientName,
+        supplierId: orders.supplierId,
+        transporterId: orders.transporterId,
+        product: orders.product,
+        productCode: orders.productCode,
+        quantity: orders.quantity,
+        unit: orders.unit,
+        expectedWeight: orders.expectedWeight,
+        originAddress: orders.originAddress,
+        destinationAddress: orders.destinationAddress,
+        destinationSiteId: orders.destinationSiteId,
+        requestedPickupDate: orders.requestedPickupDate,
+        requestedDeliveryDate: orders.requestedDeliveryDate,
+        actualPickupDate: orders.actualPickupDate,
+        actualDeliveryDate: orders.actualDeliveryDate,
+        status: orders.status,
+        priority: orders.priority,
+        specialInstructions: orders.specialInstructions,
+        notes: orders.notes,
+        requiresPermit: orders.requiresPermit,
+        hazardousMaterial: orders.hazardousMaterial,
+        temperatureControlled: orders.temperatureControlled,
+        referenceNumber: orders.referenceNumber,
+        purchaseOrderNumber: orders.purchaseOrderNumber,
+        agreedRate: orders.agreedRate,
+        rateUnit: orders.rateUnit,
+        additionalCharges: orders.additionalCharges,
+        totalAmount: orders.totalAmount,
+        createdAt: orders.createdAt,
+        updatedAt: orders.updatedAt,
+        allocationCount: sql<number>`(SELECT COUNT(*) FROM truck_allocations WHERE truck_allocations.order_id = orders.id)::int`,
+      })
         .from(orders)
         .where(and(...conditions))
         .orderBy(desc(orders.createdAt))
-        .limit(limitNum)
+        .limit(safeLimit)
         .offset(offset),
 
       db.select({ count: sql<number>`count(*)` })
@@ -293,9 +378,9 @@ router.get('/', async (req, res) => {
       total: totalCount,
       pagination: {
         page: pageNum,
-        limit: limitNum,
-        totalPages: Math.ceil(totalCount / limitNum),
-        hasMore: pageNum * limitNum < totalCount,
+        limit: safeLimit,
+        totalPages: Math.ceil(totalCount / safeLimit),
+        hasMore: pageNum * safeLimit < totalCount,
       }
     };
 
@@ -307,7 +392,6 @@ router.get('/', async (req, res) => {
     console.error('Get orders error:', error);
     res.status(500).json({
       error: 'Failed to fetch orders',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -316,9 +400,9 @@ router.get('/', async (req, res) => {
  * GET /api/orders/:id
  * Get single order by ID
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1'; // Default tenant for development
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const orderId = parseInt(req.params.id);
 
     if (isNaN(orderId)) {
@@ -343,7 +427,6 @@ router.get('/:id', async (req, res) => {
     console.error('Get order error:', error);
     res.status(500).json({
       error: 'Failed to fetch order',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -352,9 +435,9 @@ router.get('/:id', async (req, res) => {
  * PUT /api/orders/:id
  * Update order by ID
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1'; // Default tenant for development
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const orderId = parseInt(req.params.id);
 
     if (isNaN(orderId)) {
@@ -421,7 +504,6 @@ router.put('/:id', async (req, res) => {
     console.error('Update order error:', error);
     res.status(500).json({
       error: 'Failed to update order',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -430,9 +512,9 @@ router.put('/:id', async (req, res) => {
  * DELETE /api/orders/:id
  * Delete order by ID (also deletes associated truck allocations)
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1'; // Default tenant for development
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const orderId = parseInt(req.params.id);
 
     if (isNaN(orderId)) {
@@ -499,7 +581,6 @@ router.delete('/:id', async (req, res) => {
     console.error('Delete order error:', error);
     res.status(500).json({
       error: 'Failed to delete order',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

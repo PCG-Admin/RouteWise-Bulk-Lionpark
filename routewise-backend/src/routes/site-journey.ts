@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth, AuthRequest } from '../middleware/auth';
 import { db } from '../db';
 import { allocationSiteJourney, truckAllocations } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
@@ -10,9 +11,9 @@ const router = Router();
  * POST /api/site-journey
  * Create a new journey entry for an allocation at a specific site
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const {
       allocationId,
       siteId,
@@ -83,7 +84,6 @@ router.post('/', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to create journey entry',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -92,9 +92,9 @@ router.post('/', async (req, res) => {
  * GET /api/site-journey/allocation/:allocationId
  * Get complete journey history for an allocation across all sites
  */
-router.get('/allocation/:allocationId', async (req, res) => {
+router.get('/allocation/:allocationId', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { allocationId } = req.params;
 
     const journey = await db
@@ -116,7 +116,6 @@ router.get('/allocation/:allocationId', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch journey',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -125,9 +124,9 @@ router.get('/allocation/:allocationId', async (req, res) => {
  * GET /api/site-journey/site/:siteId/latest
  * Get latest status for each allocation at a specific site
  */
-router.get('/site/:siteId/latest', async (req, res) => {
+router.get('/site/:siteId/latest', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { siteId } = req.params;
 
     // Get latest journey entry for each allocation at this site
@@ -158,7 +157,6 @@ router.get('/site/:siteId/latest', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch latest journey entries',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
@@ -167,9 +165,9 @@ router.get('/site/:siteId/latest', async (req, res) => {
  * GET /api/site-journey/site/:siteId/active
  * Get all allocations currently active at a specific site
  */
-router.get('/site/:siteId/active', async (req, res) => {
+router.get('/site/:siteId/active', requireAuth, async (req, res) => {
   try {
-    const tenantId = '1';
+    const tenantId = (req as AuthRequest).auth!.tenantId;
     const { siteId } = req.params;
 
     // Get all journey entries for this site
@@ -203,7 +201,6 @@ router.get('/site/:siteId/active', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch active allocations',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });

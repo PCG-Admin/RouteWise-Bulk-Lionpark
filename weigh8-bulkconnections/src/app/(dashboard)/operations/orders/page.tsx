@@ -1,9 +1,11 @@
 "use client";
 
-import { Eye, Edit, Trash2, Upload, X, FileSpreadsheet, CheckCircle, AlertCircle, Search, Filter, Package, Clock, Truck, CheckSquare, ChevronDown } from "lucide-react";
+import { Eye, Edit, Trash2, Upload, X, FileSpreadsheet, CheckCircle, AlertCircle, Search, Package, Clock, Truck, CheckSquare, ChevronDown, PenLine, Settings2 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { OrderDetailSlideOver } from "@/components/OrderDetailSlideOver";
 import Pagination from "@/components/Pagination";
+import ManualOrderModal from "@/components/ManualOrderModal";
+import ManageAllocationsModal from "@/components/ManageAllocationsModal";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -20,6 +22,9 @@ export default function OrdersPage() {
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [editingOrder, setEditingOrder] = useState<any>(null);
     const [showEditModal, setShowEditModal] = useState(false);
+    const [showMethodChooser, setShowMethodChooser] = useState(false);
+    const [showManualOrderModal, setShowManualOrderModal] = useState(false);
+    const [managingAllocationsOrder, setManagingAllocationsOrder] = useState<any>(null);
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -40,7 +45,7 @@ export default function OrdersPage() {
 
         async function fetchOrders() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/orders`);
+                const response = await fetch(`${API_BASE_URL}/api/orders`, { credentials: 'include' });
                 const data = await response.json();
 
                 if (isMounted && data.success) {
@@ -73,7 +78,7 @@ export default function OrdersPage() {
     const refetchOrders = async () => {
         try {
             setIsLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/orders`);
+            const response = await fetch(`${API_BASE_URL}/api/orders`, { credentials: 'include' });
             const data = await response.json();
             if (data.success) {
                 setOrders(data.data || []);
@@ -98,6 +103,7 @@ export default function OrdersPage() {
             // First, get preview of the data
             const response = await fetch(`${API_BASE_URL}/api/bulk-orders/preview`, {
                 method: 'POST',
+                credentials: 'include',
                 body: formData,
             });
 
@@ -137,6 +143,7 @@ export default function OrdersPage() {
 
             const response = await fetch(`${API_BASE_URL}/api/bulk-orders/excel-upload`, {
                 method: 'POST',
+                credentials: 'include',
                 body: formData,
             });
 
@@ -178,6 +185,7 @@ export default function OrdersPage() {
         try {
             const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
                 method: 'DELETE',
+                credentials: 'include',
             });
 
             const result = await response.json();
@@ -206,6 +214,7 @@ export default function OrdersPage() {
             const response = await fetch(`${API_BASE_URL}/api/orders/${editingOrder.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify(editingOrder),
             });
 
@@ -274,6 +283,66 @@ export default function OrdersPage() {
                 order={selectedOrder}
                 onClose={() => setSelectedOrder(null)}
             />
+
+            {/* Method chooser dialog */}
+            {showMethodChooser && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-lg font-bold text-slate-900">Create New Order</h2>
+                            <button onClick={() => setShowMethodChooser(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition">
+                                <X className="w-5 h-5 text-slate-500" />
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            <button
+                                onClick={() => { setShowMethodChooser(false); setShowManualOrderModal(true); }}
+                                className="w-full flex items-center gap-4 p-4 border-2 border-blue-200 bg-blue-50 rounded-xl hover:bg-blue-100 hover:border-blue-400 transition text-left"
+                            >
+                                <div className="p-2.5 bg-blue-600 rounded-lg shrink-0">
+                                    <PenLine className="w-5 h-5 text-white" />
+                                </div>
+                                <div>
+                                    <p className="font-semibold text-slate-900 text-sm">Manual Entry</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Fill in order and truck details manually</p>
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => { setShowMethodChooser(false); setShowUploadModal(true); }}
+                                className="w-full flex items-center gap-4 p-4 border-2 border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition text-left"
+                            >
+                                <div className="p-2.5 bg-slate-700 rounded-lg shrink-0">
+                                    <FileSpreadsheet className="w-5 h-5 text-white" />
+                                </div>
+                                <div>
+                                    <p className="font-semibold text-slate-900 text-sm">Upload Excel</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Import order data from an Excel file</p>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Manual order creation modal */}
+            {showManualOrderModal && (
+                <ManualOrderModal
+                    onClose={() => setShowManualOrderModal(false)}
+                    onSuccess={async () => {
+                        setShowManualOrderModal(false);
+                        await refetchOrders();
+                    }}
+                />
+            )}
+
+            {/* Manage allocations modal */}
+            {managingAllocationsOrder && (
+                <ManageAllocationsModal
+                    order={managingAllocationsOrder}
+                    onClose={() => setManagingAllocationsOrder(null)}
+                    onSuccess={refetchOrders}
+                />
+            )}
 
             {/* Edit Order Modal */}
             {showEditModal && editingOrder && (
@@ -462,10 +531,10 @@ export default function OrdersPage() {
                     <p className="text-slate-500">Manage active orders and allocations</p>
                 </div>
                 <button
-                    onClick={() => setShowUploadModal(true)}
+                    onClick={() => setShowMethodChooser(true)}
                     className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-md hover:shadow-lg"
                 >
-                    <Upload className="w-5 h-5" />
+                    <Package className="w-5 h-5" />
                     <span>New Order</span>
                 </button>
             </div>
@@ -888,7 +957,14 @@ export default function OrdersPage() {
                         >
                             {/* Header Row with Actions */}
                             <div className="flex justify-between items-start mb-2">
-                                <h3 className="text-xl font-bold text-slate-800">{order.orderNumber}</h3>
+                                <div className="flex items-center gap-3">
+                                    <h3 className="text-xl font-bold text-slate-800">{order.orderNumber}</h3>
+                                    {/* Allocation count badge */}
+                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 border border-blue-200 rounded-full text-xs font-semibold text-blue-700">
+                                        <Truck className="w-3 h-3" />
+                                        {order.allocationCount ?? 0} truck{(order.allocationCount ?? 0) !== 1 ? "s" : ""}
+                                    </span>
+                                </div>
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => setSelectedOrder(order)}
@@ -896,6 +972,13 @@ export default function OrdersPage() {
                                     >
                                         <Eye className="w-4 h-4" />
                                         <span>Details</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setManagingAllocationsOrder(order)}
+                                        className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors"
+                                    >
+                                        <Settings2 className="w-4 h-4" />
+                                        <span>Manage Trucks</span>
                                     </button>
                                     <button
                                         onClick={() => handleEditOrder(order)}

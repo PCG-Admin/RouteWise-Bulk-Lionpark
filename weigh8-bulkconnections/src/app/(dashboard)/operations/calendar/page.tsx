@@ -21,7 +21,7 @@ export default function CalendarViewPage() {
     const fetchEvents = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/operations/calendar`);
+            const response = await fetch(`${API_BASE_URL}/operations/calendar`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch events');
             const data = await response.json();
             setEvents(data.events || []);

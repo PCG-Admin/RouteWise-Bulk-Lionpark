@@ -4,7 +4,7 @@ import { BarChart3, TrendingUp, PieChart, Calendar, ArrowRight, RefreshCw, Alert
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 
-const API_BASE_URL = "http://localhost:3001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 interface ReportType {
     name: string;
@@ -28,7 +28,7 @@ export default function ReportsPage() {
         try {
             setLoading(true);
             setError(null);
-            const response = await fetch(`${API_BASE_URL}/api/reports`);
+            const response = await fetch(`${API_BASE_URL}/api/reports`, { credentials: 'include' });
             if (!response.ok) {
                 throw new Error('Failed to fetch reports');
             }
