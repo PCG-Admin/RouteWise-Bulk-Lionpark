@@ -6,10 +6,17 @@ import { OrderDetailSlideOver } from "@/components/OrderDetailSlideOver";
 import Pagination from "@/components/Pagination";
 import ManualOrderModal from "@/components/ManualOrderModal";
 import ManageAllocationsModal from "@/components/ManageAllocationsModal";
+import Toast from "@/components/Toast";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { useToast } from "@/hooks/useToast";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export default function OrdersPage() {
+    const { toasts, removeToast, success, error } = useToast();
+    const { isOpen: confirmOpen, options: confirmOptions, confirm, handleConfirm, handleCancel } = useConfirm();
+
     const [selectedOrder, setSelectedOrder] = useState<any>(null);
     const [orders, setOrders] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -159,13 +166,13 @@ export default function OrdersPage() {
                 await refetchOrders();
 
                 // Show success message
-                alert(`Success! Created order ${result.data.order.orderNumber} with ${result.data.allocations.length} truck allocations.`);
+                success(`Success! Created order ${result.data.order.orderNumber} with ${result.data.allocations.length} truck allocations.`);
             } else {
-                alert(`Failed to create order: ${result.error || 'Unknown error'}`);
+                error(`Failed to create order: ${result.error || 'Unknown error'}`);
             }
-        } catch (error) {
-            console.error('Upload error:', error);
-            alert('Network error occurred while creating order');
+        } catch (err) {
+            console.error('Upload error:', err);
+            error('Network error occurred while creating order');
         } finally {
             setIsUploading(false);
         }
@@ -178,9 +185,15 @@ export default function OrdersPage() {
     };
 
     const handleDelete = async (orderId: number, orderNumber: string) => {
-        if (!confirm(`Are you sure you want to delete order ${orderNumber}?`)) {
-            return;
-        }
+        const confirmed = await confirm({
+            title: 'Delete Order',
+            message: `Are you sure you want to delete order ${orderNumber}? This action cannot be undone.`,
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            variant: 'danger',
+        });
+
+        if (!confirmed) return;
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
@@ -192,13 +205,13 @@ export default function OrdersPage() {
 
             if (result.success) {
                 await refetchOrders();
-                alert('Order deleted successfully');
+                success('Order deleted successfully');
             } else {
-                alert(`Failed to delete order: ${result.error || 'Unknown error'}`);
+                error(`Failed to delete order: ${result.error || 'Unknown error'}`);
             }
-        } catch (error) {
-            console.error('Delete error:', error);
-            alert('Network error occurred while deleting order');
+        } catch (err) {
+            console.error('Delete error:', err);
+            error('Network error occurred while deleting order');
         }
     };
 
@@ -224,13 +237,13 @@ export default function OrdersPage() {
                 await refetchOrders();
                 setShowEditModal(false);
                 setEditingOrder(null);
-                alert('Order updated successfully');
+                success('Order updated successfully');
             } else {
-                alert(`Failed to update order: ${result.error || 'Unknown error'}`);
+                error(`Failed to update order: ${result.error || 'Unknown error'}`);
             }
-        } catch (error) {
-            console.error('Update error:', error);
-            alert('Network error occurred while updating order');
+        } catch (err) {
+            console.error('Update error:', err);
+            error('Network error occurred while updating order');
         }
     };
 
@@ -827,11 +840,11 @@ export default function OrdersPage() {
                         <div className="p-6 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Excel File
+                                    Order File (Excel or PDF)
                                 </label>
                                 <input
                                     type="file"
-                                    accept=".xlsx,.xls,.csv"
+                                    accept=".xlsx,.xls,.csv,.pdf"
                                     onChange={handleFileChange}
                                     disabled={isUploading}
                                     className="block w-full text-sm text-slate-500
@@ -844,7 +857,13 @@ export default function OrdersPage() {
                                         border border-slate-300 rounded-lg"
                                 />
                                 <p className="text-xs text-slate-500 mt-2">
-                                    Supported formats: .xlsx, .xls, .csv
+                                    Supported formats: Excel (.xlsx, .xls, .csv) or PDF (.pdf)
+                                </p>
+                                <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                    </svg>
+                                    PDF files are processed using AI for automatic data extraction
                                 </p>
                             </div>
 
@@ -1087,6 +1106,28 @@ export default function OrdersPage() {
                     itemsPerPageOptions={[10, 25, 50]}
                 />
             )}
+
+            {/* Toast Notifications */}
+            {toasts.map((toast) => (
+                <Toast
+                    key={toast.id}
+                    type={toast.type}
+                    message={toast.message}
+                    onClose={() => removeToast(toast.id)}
+                />
+            ))}
+
+            {/* Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={confirmOpen}
+                onClose={handleCancel}
+                onConfirm={handleConfirm}
+                title={confirmOptions.title}
+                message={confirmOptions.message}
+                confirmText={confirmOptions.confirmText}
+                cancelText={confirmOptions.cancelText}
+                variant={confirmOptions.variant}
+            />
         </div>
     );
 }

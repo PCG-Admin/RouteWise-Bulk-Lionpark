@@ -132,35 +132,9 @@ export default function InternalWeighbridgeUploadModal({
   const handleSave = async () => {
     if (!ocrResult) return;
 
-    setSaving(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/internal-weighbridge/save-ticket`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          extractedData: ocrResult.extractedData,
-          matchedAllocationId: ocrResult.bestMatch?.id,
-          weightDiscrepancy: ocrResult.weightDiscrepancy,
-          ocrConfidence: ocrResult.ocrConfidence,
-          pdfFileName: ocrResult.pdfFileName,
-        }),
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to save ticket");
-      }
-
-      onSuccess();
-      handleClose();
-    } catch (err: any) {
-      setError(err.message || "Failed to save ticket");
-    } finally {
-      setSaving(false);
-    }
+    // Ticket is already saved during upload, just refresh and close
+    onSuccess();
+    handleClose();
   };
 
   const handleClose = () => {

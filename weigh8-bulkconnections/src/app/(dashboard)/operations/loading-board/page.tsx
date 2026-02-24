@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { VisitDetailSlideOver } from "@/components/VisitDetailSlideOver";
 import { Modal } from "@/components/ui/Modal";
+import Toast from "@/components/Toast";
+import { useToast } from "@/hooks/useToast";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
 
@@ -23,11 +25,11 @@ type FilterBarProps = {
     trucks: any[];
 };
 
-const stages: { id: Stage; title: string; icon: any; color: string; bgColor: string; count: number }[] = [
-    { id: "staging", title: "Staging", icon: Box, color: "text-amber-600", bgColor: "bg-amber-50", count: 643 },
-    { id: "pending_arrival", title: "Pending Arrival", icon: Clock, color: "text-blue-600", bgColor: "bg-blue-50", count: 357 },
-    { id: "checked_in", title: "Checked In", icon: CheckCircle2, color: "text-emerald-600", bgColor: "bg-emerald-50", count: 0 },
-    { id: "departed", title: "Departed", icon: TrendingUp, color: "text-purple-600", bgColor: "bg-purple-50", count: 0 },
+const stageDefinitions: { id: Stage; title: string; icon: any; color: string; bgColor: string }[] = [
+    { id: "staging", title: "Staging", icon: Box, color: "text-amber-600", bgColor: "bg-amber-50" },
+    { id: "pending_arrival", title: "Pending Arrival", icon: Clock, color: "text-blue-600", bgColor: "bg-blue-50" },
+    { id: "checked_in", title: "Checked In", icon: CheckCircle2, color: "text-emerald-600", bgColor: "bg-emerald-50" },
+    { id: "departed", title: "Departed", icon: TrendingUp, color: "text-purple-600", bgColor: "bg-purple-50" },
 ];
 
 
@@ -186,6 +188,8 @@ function FilterBar({ filters, setFilters, trucks }: FilterBarProps) {
 }
 
 export default function LoadingBoardPage() {
+    const { toasts, removeToast, success, error: showError, warning } = useToast();
+
     const [trucks, setTrucks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -205,6 +209,12 @@ export default function LoadingBoardPage() {
     const [searchedAllocation, setSearchedAllocation] = useState<any>(null);
     const [isSearching, setIsSearching] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
+
+    // Compute stages with real counts from trucks data
+    const stages = stageDefinitions.map(stageDef => ({
+        ...stageDef,
+        count: trucks.filter((truck: any) => truck.stage === stageDef.id).length
+    }));
 
     useEffect(() => {
         fetchTrucks();
@@ -381,7 +391,7 @@ export default function LoadingBoardPage() {
 
     const handleSearchPlate = async () => {
         if (!manualPlate.trim()) {
-            alert('Please enter a vehicle registration number');
+            warning('Please enter a vehicle registration number');
             return;
         }
 
@@ -399,7 +409,7 @@ export default function LoadingBoardPage() {
             ) || [];
 
             if (candidates.length === 0) {
-                alert(`No allocation found for plate: ${manualPlate}`);
+                showError(`No allocation found for plate: ${manualPlate}`);
             } else if (candidates.length === 1) {
                 setSearchedAllocation(candidates[0]);
             } else {
@@ -421,9 +431,9 @@ export default function LoadingBoardPage() {
                 setSearchedAllocation(best);
                 console.log(`Multiple allocations for ${manualPlate} — selected ID ${best.id} (status: ${best.status})`);
             }
-        } catch (error) {
-            console.error('Search error:', error);
-            alert('Failed to search for allocation');
+        } catch (err) {
+            console.error('Search error:', err);
+            showError('Failed to search for allocation');
         } finally {
             setIsSearching(false);
         }
@@ -456,7 +466,7 @@ export default function LoadingBoardPage() {
                 throw new Error(errorData.error || 'Failed to record gate action');
             }
 
-            alert(`✓ ${manualGate === 'entry' ? 'Check-in' : 'Check-out'} recorded successfully for ${searchedAllocation.vehicleReg}`);
+            success(`${manualGate === 'entry' ? 'Check-in' : 'Check-out'} recorded successfully for ${searchedAllocation.vehicleReg}`);
 
             // Reset and close
             setIsManualEntryOpen(false);
@@ -466,9 +476,9 @@ export default function LoadingBoardPage() {
 
             // Refresh data
             fetchTrucks();
-        } catch (error) {
-            console.error('Gate action error:', error);
-            alert(`Failed to record gate action: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } catch (err) {
+            console.error('Gate action error:', err);
+            showError(`Failed to record gate action: ${err instanceof Error ? err.message : 'Unknown error'}`);
         } finally {
             setIsProcessing(false);
         }
@@ -742,23 +752,27 @@ export default function LoadingBoardPage() {
                 <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-sm">
                     <div>
                         <span className="text-xs font-medium text-slate-500">Total Trucks</span>
-                        <div className="text-lg font-bold text-slate-900">0 Today</div>
+                        <div className="text-lg font-bold text-slate-900">{trucks.length} Today</div>
                     </div>
                     <Truck className="w-8 h-8 text-blue-100" />
                 </div>
                 <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-sm">
                     <div>
-                        <span className="text-xs font-medium text-slate-500">Trucks/Hour</span>
-                        <div className="text-lg font-bold text-slate-900 text-emerald-600">0 This Hour</div>
+                        <span className="text-xs font-medium text-slate-500">Checked In</span>
+                        <div className="text-lg font-bold text-emerald-600">
+                            {trucks.filter((t: any) => t.stage === 'checked_in').length} Active
+                        </div>
                     </div>
-                    <Clock className="w-8 h-8 text-emerald-100" />
+                    <CheckCircle2 className="w-8 h-8 text-emerald-100" />
                 </div>
                 <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-sm">
                     <div>
-                        <span className="text-xs font-medium text-slate-500">Avg. Time in Park</span>
-                        <div className="text-lg font-bold text-slate-900 text-orange-600">56h 42m</div>
+                        <span className="text-xs font-medium text-slate-500">Departed</span>
+                        <div className="text-lg font-bold text-purple-600">
+                            {trucks.filter((t: any) => t.stage === 'departed').length} Today
+                        </div>
                     </div>
-                    <TrendingUp className="w-8 h-8 text-orange-100" />
+                    <TrendingUp className="w-8 h-8 text-purple-100" />
                 </div>
             </div>
 
@@ -939,6 +953,16 @@ export default function LoadingBoardPage() {
                     );
                 })}
             </div>
+
+            {/* Toast Notifications */}
+            {toasts.map((toast) => (
+                <Toast
+                    key={toast.id}
+                    type={toast.type}
+                    message={toast.message}
+                    onClose={() => removeToast(toast.id)}
+                />
+            ))}
         </div>
     );
 }

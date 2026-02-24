@@ -14,7 +14,12 @@ import {
     Users,
     ChevronDown,
     LogOut,
-    ChevronLeft
+    ChevronLeft,
+    Pickaxe,
+    Clock,
+    Warehouse,
+    ArrowUpDown,
+    AlertTriangle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
@@ -84,12 +89,12 @@ const navigation: NavigationItem[] = [
         icon: BarChart3,
         current: false,
         children: [
-            { name: "Reports Hub", href: "/reports/hub", icon: BarChart3 },
-            { name: "Stockpile Dashboard", href: "/reports/stockpile-dashboard", icon: LayoutDashboard },
-            { name: "All reports", href: "/reports/all", icon: FileText },
-            { name: "Scheduled Reports", href: "/reports/scheduled", icon: ClipboardList },
-            { name: "Overview", href: "/reports/overview", icon: BarChart3 },
-            { name: "Settings", href: "/reports/settings", icon: Users },
+            { name: "Overview", href: "/reports/overview", icon: LayoutDashboard },
+            { name: "Order Reports", href: "/reports/order-reports", icon: Pickaxe },
+            { name: "Logistics", href: "/reports/logistics", icon: Clock },
+            { name: "Stockpiles", href: "/reports/stockpiles", icon: Warehouse },
+            { name: "Analysis", href: "/reports/analysis", icon: ArrowUpDown },
+            { name: "Intelligence", href: "/reports/intelligence", icon: AlertTriangle },
         ],
     },
 ];

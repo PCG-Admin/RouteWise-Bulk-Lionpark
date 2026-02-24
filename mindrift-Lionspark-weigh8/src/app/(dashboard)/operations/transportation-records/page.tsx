@@ -6,6 +6,10 @@ import ParkingTicketModal from "@/components/ParkingTicketModal";
 import ParkingTicketViewModal from "@/components/ParkingTicketViewModal";
 import { OrderDetailSlideOver } from "@/components/OrderDetailSlideOver";
 import Pagination from "@/components/Pagination";
+import Toast from "@/components/Toast";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { useToast } from "@/hooks/useToast";
+import { useConfirm } from "@/hooks/useConfirm";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 const SITE_ID = process.env.NEXT_PUBLIC_SITE_ID;
@@ -41,6 +45,9 @@ interface TruckAllocation {
 }
 
 export default function TransportationRecordsPage() {
+    const { toasts, removeToast, success, error: showError } = useToast();
+    const { isOpen: confirmOpen, options: confirmOptions, confirm, handleConfirm, handleCancel } = useConfirm();
+
     const [allocations, setAllocations] = useState<TruckAllocation[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -160,9 +167,15 @@ export default function TransportationRecordsPage() {
     };
 
     const handleIssuePermit = async (allocationId: number, vehicleReg: string) => {
-        if (!confirm(`Issue permit for ${vehicleReg}? This will mark the truck as "Ready for Dispatch".`)) {
-            return;
-        }
+        const confirmed = await confirm({
+            title: 'Issue Permit',
+            message: `Issue permit for ${vehicleReg}? This will mark the truck as "Ready for Dispatch".`,
+            confirmText: 'Issue Permit',
+            cancelText: 'Cancel',
+            variant: 'info',
+        });
+
+        if (!confirmed) return;
 
         setIssuingPermitId(allocationId);
         try {
@@ -176,13 +189,13 @@ export default function TransportationRecordsPage() {
 
             if (result.success) {
                 await fetchAllocations();
-                alert(`Permit issued successfully for ${vehicleReg}!`);
+                success(`Permit issued successfully for ${vehicleReg}!`);
             } else {
-                alert(`Failed to issue permit: ${result.error}`);
+                showError(`Failed to issue permit: ${result.error}`);
             }
-        } catch (error) {
-            console.error('Issue permit error:', error);
-            alert('Failed to issue permit. Please try again.');
+        } catch (err) {
+            console.error('Issue permit error:', err);
+            showError('Failed to issue permit. Please try again.');
         } finally {
             setIssuingPermitId(null);
         }
@@ -692,6 +705,28 @@ export default function TransportationRecordsPage() {
                     }}
                 />
             )}
+
+            {/* Toast Notifications */}
+            {toasts.map((toast) => (
+                <Toast
+                    key={toast.id}
+                    type={toast.type}
+                    message={toast.message}
+                    onClose={() => removeToast(toast.id)}
+                />
+            ))}
+
+            {/* Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={confirmOpen}
+                onClose={handleCancel}
+                onConfirm={handleConfirm}
+                title={confirmOptions.title}
+                message={confirmOptions.message}
+                confirmText={confirmOptions.confirmText}
+                cancelText={confirmOptions.cancelText}
+                variant={confirmOptions.variant}
+            />
         </div>
     );
 }

@@ -455,6 +455,69 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/truck-allocations/allocation/:id
+ * Get a single truck allocation by allocation ID with order details
+ */
+router.get('/allocation/:id', requireAuth, async (req, res) => {
+  try {
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+    const { id } = req.params;
+
+    console.log(`🔍 GET /truck-allocations/allocation/${id} - tenantId: ${tenantId}`);
+
+    // Use raw SQL query to get allocation with order and parking ticket details
+    const query = sql`
+      SELECT
+        ta.*,
+        o.order_number,
+        o.purchase_order_number,
+        o.client_name,
+        o.product,
+        
+        o.origin_address,
+        o.destination_address,
+        pt.driver_name as parking_driver_name,
+        pt.driver_id_number as parking_driver_id,
+        pt.driver_contact_number as parking_driver_phone,
+        pt.customer_name as parking_customer_name,
+        pt.transporter_name as parking_transporter_name,
+        pt.freight_company_name as parking_freight_company,
+        pt.arrival_datetime as parking_arrival_time
+      FROM truck_allocations ta
+      LEFT JOIN orders o ON ta.order_id = o.id
+      LEFT JOIN parking_tickets pt ON ta.id = pt.truck_allocation_id
+      WHERE ta.id = ${parseInt(id)}
+      AND ta.tenant_id = ${tenantId}
+      LIMIT 1
+    `;
+
+    const result = await db.execute(query);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Allocation not found',
+      });
+    }
+
+    const allocation = result.rows[0];
+
+    console.log(`✅ Returning single allocation ${id} with order details`);
+
+    res.json({
+      success: true,
+      data: allocation,
+    });
+  } catch (error) {
+    console.error('Get single allocation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch allocation',
+    });
+  }
+});
+
+/**
  * GET /api/truck-allocations/:orderId
  * Get all truck allocations for an order
  */

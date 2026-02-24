@@ -1,0 +1,26 @@
+import type { Transporter } from '@/lib/types';
+
+export const transporters: Transporter[] = [
+  { id: 'amadwala', name: 'Amadwala T/Port', fleetSize: 18, contactPerson: 'Jan Visagie', email: 'jan@amadwala.co.za', phone: '+27 82 123 4567', performanceScore: 88, onTimePct: 92, avgTransitHours: 7.2, avgVariancePct: 0.8 },
+  { id: 'assegal', name: 'ASSEGAL', fleetSize: 22, contactPerson: 'Henk Steyn', email: 'henk@assegal.co.za', phone: '+27 83 234 5678', performanceScore: 85, onTimePct: 89, avgTransitHours: 7.8, avgVariancePct: 1.1 },
+  { id: 'carbon-white', name: 'Carbon White', fleetSize: 15, contactPerson: 'Fanie Nel', email: 'fanie@carbonwhite.co.za', phone: '+27 84 345 6789', performanceScore: 91, onTimePct: 94, avgTransitHours: 6.9, avgVariancePct: 0.6 },
+  { id: 'comotrans', name: 'Comotrans', fleetSize: 30, contactPerson: 'Pierre du Toit', email: 'pierre@comotrans.co.za', phone: '+27 82 456 7890', performanceScore: 82, onTimePct: 86, avgTransitHours: 8.1, avgVariancePct: 1.3 },
+  { id: 'gj-farms', name: 'GJ Farms', fleetSize: 12, contactPerson: 'Gert Joubert', email: 'gert@gjfarms.co.za', phone: '+27 83 567 8901', performanceScore: 79, onTimePct: 82, avgTransitHours: 8.5, avgVariancePct: 1.5 },
+  { id: 'lcs-logistics', name: 'LCS Logistics', fleetSize: 25, contactPerson: 'Leon Coetzee', email: 'leon@lcs.co.za', phone: '+27 84 678 9012', performanceScore: 90, onTimePct: 93, avgTransitHours: 7.0, avgVariancePct: 0.7 },
+  { id: 'leeuspruit', name: 'Leeuspruit Transport', fleetSize: 16, contactPerson: 'Willie Leeuw', email: 'willie@leeuspruit.co.za', phone: '+27 82 789 0123', performanceScore: 84, onTimePct: 87, avgTransitHours: 7.9, avgVariancePct: 1.2 },
+  { id: 'macdonalds', name: "Macdonald's Transport", fleetSize: 28, contactPerson: 'Ian Macdonald', email: 'ian@macdonalds.co.za', phone: '+27 83 890 1234', performanceScore: 87, onTimePct: 90, avgTransitHours: 7.4, avgVariancePct: 0.9 },
+  { id: 'mg-jacobs', name: 'MG Jacobs', fleetSize: 14, contactPerson: 'Martin Jacobs', email: 'martin@mgjacobs.co.za', phone: '+27 84 901 2345', performanceScore: 86, onTimePct: 88, avgTransitHours: 7.6, avgVariancePct: 1.0 },
+  { id: 'nwb-carriers', name: 'NWB Carriers', fleetSize: 20, contactPerson: 'Nico van Wyk', email: 'nico@nwb.co.za', phone: '+27 82 012 3456', performanceScore: 83, onTimePct: 85, avgTransitHours: 8.0, avgVariancePct: 1.4 },
+  { id: 'parsons', name: 'Parsons Trading', fleetSize: 10, contactPerson: 'Brian Parsons', email: 'brian@parsons.co.za', phone: '+27 83 123 4567', performanceScore: 92, onTimePct: 95, avgTransitHours: 6.8, avgVariancePct: 0.5 },
+  { id: 'pindulo', name: 'Pindulo', fleetSize: 17, contactPerson: 'Sipho Dlamini', email: 'sipho@pindulo.co.za', phone: '+27 84 234 5678', performanceScore: 80, onTimePct: 83, avgTransitHours: 8.3, avgVariancePct: 1.4 },
+  { id: 'reinhardt', name: 'Reinhardt Transport', fleetSize: 24, contactPerson: 'Dirk Reinhardt', email: 'dirk@reinhardt.co.za', phone: '+27 82 345 6789', performanceScore: 89, onTimePct: 91, avgTransitHours: 7.3, avgVariancePct: 0.8 },
+  { id: 'rs-regal', name: 'RS Regal', fleetSize: 13, contactPerson: 'Rudi Scheepers', email: 'rudi@rsregal.co.za', phone: '+27 83 456 7890', performanceScore: 81, onTimePct: 84, avgTransitHours: 8.2, avgVariancePct: 1.3 },
+  { id: 'sekusile', name: 'Sekusile', fleetSize: 19, contactPerson: 'Bongani Zulu', email: 'bongani@sekusile.co.za', phone: '+27 84 567 8901', performanceScore: 76, onTimePct: 79, avgTransitHours: 8.8, avgVariancePct: 1.7 },
+  { id: 'third-gen', name: 'Third Gen', fleetSize: 21, contactPerson: 'Kobus Marais', email: 'kobus@thirdgen.co.za', phone: '+27 82 678 9012', performanceScore: 88, onTimePct: 91, avgTransitHours: 7.3, avgVariancePct: 0.9 },
+  { id: 'transmac', name: 'Transmac', fleetSize: 26, contactPerson: 'Charl Bezuidenhout', email: 'charl@transmac.co.za', phone: '+27 83 789 0123', performanceScore: 85, onTimePct: 88, avgTransitHours: 7.7, avgVariancePct: 1.1 },
+  { id: 'vdm', name: 'VDM', fleetSize: 11, contactPerson: 'Vusi Dube', email: 'vusi@vdm.co.za', phone: '+27 84 890 1234', performanceScore: 87, onTimePct: 90, avgTransitHours: 7.5, avgVariancePct: 1.0 },
+  { id: 'westmead', name: 'Westmead Carries', fleetSize: 15, contactPerson: 'Trevor West', email: 'trevor@westmead.co.za', phone: '+27 82 901 2345', performanceScore: 68, onTimePct: 71, avgTransitHours: 9.2, avgVariancePct: 2.1 },
+  { id: 'winberg', name: 'Winberg Transport', fleetSize: 23, contactPerson: 'Frans Winberg', email: 'frans@winberg.co.za', phone: '+27 83 012 3456', performanceScore: 86, onTimePct: 89, avgTransitHours: 7.6, avgVariancePct: 1.0 },
+  { id: 'zen-holdings', name: 'Zen Holdings', fleetSize: 14, contactPerson: 'Zandile Ngcobo', email: 'zandile@zen.co.za', phone: '+27 84 123 4567', performanceScore: 83, onTimePct: 86, avgTransitHours: 7.9, avgVariancePct: 1.2 },
+  { id: 'zjg', name: 'ZJG', fleetSize: 9, contactPerson: 'Jurgen Greyling', email: 'jurgen@zjg.co.za', phone: '+27 82 234 5678', performanceScore: 90, onTimePct: 93, avgTransitHours: 7.1, avgVariancePct: 0.7 },
+];

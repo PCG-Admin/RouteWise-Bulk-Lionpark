@@ -463,6 +463,75 @@ export const parkingTickets = pgTable('parking_tickets', {
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
+// Bulk Internal Weighbridge Tickets table
+export const bulkInternalWeighbridgeTickets = pgTable('bulk_internal_weighbridge_tickets', {
+  id: serial('id').primaryKey(),
+  tenantId: varchar('tenant_id', { length: 50 }).notNull(),
+  truckAllocationId: integer('truck_allocation_id'),
+  matchStatus: varchar('match_status', { length: 20 }).default('unmatched'),
+
+  // Ticket identification
+  ticketNumber: varchar('ticket_number', { length: 50 }).notNull().unique(),
+  instructionOrderNumber: varchar('instruction_order_number', { length: 100 }),
+
+  // Vehicle information
+  truckReg: varchar('truck_reg', { length: 20 }),
+  trailerReg: varchar('trailer_reg', { length: 20 }),
+  haulier: varchar('haulier', { length: 200 }),
+
+  // Driver information
+  driverName: varchar('driver_name', { length: 200 }),
+  driverSignature: varchar('driver_signature', { length: 500 }),
+  driverIdNumber: varchar('driver_id_number', { length: 50 }),
+
+  // Order information
+  orderNumber: varchar('order_number', { length: 100 }),
+  customerName: varchar('customer_name', { length: 200 }),
+  product: varchar('product', { length: 200 }),
+  grade: varchar('grade', { length: 100 }),
+  destination: varchar('destination', { length: 200 }),
+  stockpile: varchar('stockpile', { length: 100 }),
+
+  // Weight information
+  grossMass: decimal('gross_mass', { precision: 10, scale: 2 }),
+  tareMass: decimal('tare_mass', { precision: 10, scale: 2 }),
+  netMass: decimal('net_mass', { precision: 10, scale: 2 }),
+
+  // Time tracking
+  arrivalTime: timestamp('arrival_time'),
+  departureTime: timestamp('departure_time'),
+
+  // Clerk information
+  incomingClerkEmail: varchar('incoming_clerk_email', { length: 255 }),
+  outgoingClerkSignature: varchar('outgoing_clerk_signature', { length: 500 }),
+
+  // PDF/OCR information
+  pdfFilePath: varchar('pdf_file_path', { length: 500 }),
+  pdfFileName: varchar('pdf_file_name', { length: 255 }),
+  ocrRawResponse: varchar('ocr_raw_response', { length: 10000 }),
+  ocrConfidence: decimal('ocr_confidence', { precision: 5, scale: 2 }),
+  ocrProcessedAt: timestamp('ocr_processed_at'),
+
+  // Weight discrepancy
+  hasWeightDiscrepancy: boolean('has_weight_discrepancy').default(false),
+  weightDiscrepancyAmount: decimal('weight_discrepancy_amount', { precision: 10, scale: 2 }),
+  weightDiscrepancyPercentage: decimal('weight_discrepancy_percentage', { precision: 5, scale: 2 }),
+  discrepancyNotes: text('discrepancy_notes'),
+
+  // Verification
+  verifiedByUser: boolean('verified_by_user').default(false),
+  verifiedBy: varchar('verified_by', { length: 100 }),
+  verifiedAt: timestamp('verified_at'),
+  userCorrections: varchar('user_corrections', { length: 5000 }),
+
+  // Status and comments
+  comments: text('comments'),
+  status: varchar('status', { length: 20 }).default('pending'),
+
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type Site = typeof sites.$inferSelect;
 export type FreightCompany = typeof freightCompanies.$inferSelect;

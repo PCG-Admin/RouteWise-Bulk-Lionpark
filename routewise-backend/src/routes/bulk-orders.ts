@@ -6,6 +6,7 @@ import { orders, clients, suppliers, transporters, truckAllocations } from '../d
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { eq } from 'drizzle-orm';
 import { parseExcelFile } from '../utils/excelParser';
+import { parsePDFFile } from '../utils/pdfParser';
 import { invalidateCache } from '../utils/cache';
 
 const router = Router();
@@ -102,19 +103,29 @@ router.post('/preview', upload.single('excelFile'), async (req, res) => {
       req.file.mimetype === 'application/csv' ||
       req.file.originalname.endsWith('.csv');
 
-    if (!isExcel && !isCsv) {
+    const isPDF =
+      req.file.mimetype === 'application/pdf' ||
+      req.file.originalname.endsWith('.pdf');
+
+    if (!isExcel && !isCsv && !isPDF) {
       return res.status(400).json({
         success: false,
-        error: 'Only Excel (.xlsx, .xls, .xlsb) and CSV (.csv) files are supported'
+        error: 'Only Excel (.xlsx, .xls, .xlsb), CSV (.csv), and PDF (.pdf) files are supported'
       });
     }
 
-    console.log('\n=== PREVIEW EXCEL FILE ===');
+    console.log('\n=== PREVIEW FILE ===');
     console.log('File:', req.file.originalname);
     console.log('Size:', req.file.size, 'bytes');
+    console.log('Type:', isPDF ? 'PDF' : isExcel ? 'Excel' : 'CSV');
 
     // Parse file without creating database records
-    const parsed = parseExcelFile(req.file.buffer, req.file.originalname);
+    let parsed;
+    if (isPDF) {
+      parsed = await parsePDFFile(req.file.buffer, req.file.originalname);
+    } else {
+      parsed = parseExcelFile(req.file.buffer, req.file.originalname);
+    }
 
     console.log('Parser result:', {
       format: parsed.format,
@@ -146,7 +157,7 @@ router.post('/preview', upload.single('excelFile'), async (req, res) => {
     console.error('Preview error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to preview Excel file',
+      error: 'Failed to preview file',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
@@ -154,7 +165,7 @@ router.post('/preview', upload.single('excelFile'), async (req, res) => {
 
 /**
  * POST /api/bulk-orders/excel-upload
- * Upload Excel file and create order with truck allocations using smart parser
+ * Upload Excel/PDF file and create order with truck allocations using smart parser
  */
 router.post('/excel-upload', upload.single('excelFile'), async (req, res) => {
   try {
@@ -164,7 +175,7 @@ router.post('/excel-upload', upload.single('excelFile'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        error: 'Excel file is required'
+        error: 'File is required'
       });
     }
 
@@ -181,19 +192,29 @@ router.post('/excel-upload', upload.single('excelFile'), async (req, res) => {
       req.file.mimetype === 'application/csv' ||
       req.file.originalname.endsWith('.csv');
 
-    if (!isExcel && !isCsv) {
+    const isPDF =
+      req.file.mimetype === 'application/pdf' ||
+      req.file.originalname.endsWith('.pdf');
+
+    if (!isExcel && !isCsv && !isPDF) {
       return res.status(400).json({
         success: false,
-        error: 'Only Excel (.xlsx, .xls, .xlsb) and CSV (.csv) files are supported'
+        error: 'Only Excel (.xlsx, .xls, .xlsb), CSV (.csv), and PDF (.pdf) files are supported'
       });
     }
 
-    console.log('\n=== STARTING EXCEL UPLOAD ===');
+    console.log('\n=== STARTING FILE UPLOAD ===');
     console.log('File:', req.file.originalname);
     console.log('Size:', req.file.size, 'bytes');
+    console.log('Type:', isPDF ? 'PDF (Gemini OCR)' : isExcel ? 'Excel' : 'CSV');
 
     // Use smart parser to extract order + allocations
-    const parsed = parseExcelFile(req.file.buffer, req.file.originalname);
+    let parsed;
+    if (isPDF) {
+      parsed = await parsePDFFile(req.file.buffer, req.file.originalname);
+    } else {
+      parsed = parseExcelFile(req.file.buffer, req.file.originalname);
+    }
 
     console.log('Parser result:', {
       format: parsed.format,
@@ -299,10 +320,10 @@ router.post('/excel-upload', upload.single('excelFile'), async (req, res) => {
       message: `Successfully imported order with ${createdAllocations.length} trucks`,
     });
   } catch (error) {
-    console.error('Excel upload error:', error);
+    console.error('File upload error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to process Excel file',
+      error: 'Failed to process file',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
 import { db } from '../db';
-import { orders, clients, suppliers, transporters, truckAllocations, driverDocuments, parkingTickets } from '../db/schema';
+import { orders, clients, suppliers, transporters, truckAllocations, driverDocuments, parkingTickets, allocationSiteJourney, bulkInternalWeighbridgeTickets } from '../db/schema';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { eq, inArray, and, or, ilike, desc, sql } from 'drizzle-orm';
 import { getCached, setCache, invalidateCache } from '../utils/cache';
@@ -553,7 +553,19 @@ router.delete('/:id', requireAuth, async (req, res) => {
         .where(inArray(driverDocuments.allocationId, allocationIds));
       console.log(`Deleted driver documents for order ${orderId}`);
 
-      // Third, delete truck allocations (references orders)
+      // Third, delete allocation site journey records (references truck_allocations)
+      await db
+        .delete(allocationSiteJourney)
+        .where(inArray(allocationSiteJourney.allocationId, allocationIds));
+      console.log(`Deleted allocation site journey records for order ${orderId}`);
+
+      // Fourth, delete internal weighbridge tickets (references truck_allocations)
+      await db
+        .delete(bulkInternalWeighbridgeTickets)
+        .where(inArray(bulkInternalWeighbridgeTickets.truckAllocationId, allocationIds));
+      console.log(`Deleted internal weighbridge tickets for order ${orderId}`);
+
+      // Fifth, delete truck allocations (references orders)
       await db
         .delete(truckAllocations)
         .where(eq(truckAllocations.orderId, orderId));
