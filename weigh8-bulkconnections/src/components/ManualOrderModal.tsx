@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2, CheckCircle, Loader2, AlertCircle, Building2, Users, UserCheck } from "lucide-react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 const SITE_ID = 2; // Bulk Connections — always pull master data from this site
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,15 +66,15 @@ function QuickAddModal({
 
         if (type === "client") {
             if (!f("name").trim()) { setError("Company name is required"); return; }
-            url = `${API_BASE_URL}/api/clients`;
+            url = `${API_BASE_URL}/clients`;
             body = { name: f("name"), code: f("code") || undefined, contactPerson: f("contactPerson") || undefined, phone: f("phone") || undefined, email: f("email") || undefined, siteId: SITE_ID };
         } else if (type === "transporter") {
             if (!f("name").trim()) { setError("Company name is required"); return; }
-            url = `${API_BASE_URL}/api/transporters`;
+            url = `${API_BASE_URL}/transporters`;
             body = { name: f("name"), code: f("code") || undefined, contactPerson: f("contactPerson") || undefined, phone: f("phone") || undefined, email: f("email") || undefined, siteId: SITE_ID };
         } else if (type === "driver") {
             if (!f("firstName").trim() || !f("lastName").trim()) { setError("First and last name are required"); return; }
-            url = `${API_BASE_URL}/api/drivers`;
+            url = `${API_BASE_URL}/drivers`;
             body = { firstName: f("firstName"), lastName: f("lastName"), phone: f("phone") || undefined, idNumber: f("idNumber") || undefined, licenseNumber: f("licenseNumber") || undefined, transporterId: f("transporterId") ? parseInt(f("transporterId")) : undefined };
         }
 
@@ -271,9 +271,9 @@ export default function ManualOrderModal({ onClose, onSuccess }: Props) {
         const fetchAll = async () => {
             try {
                 const [cRes, tRes, dRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/api/clients?siteId=${SITE_ID}`, { credentials: 'include' }),
-                    fetch(`${API_BASE_URL}/api/transporters?siteId=${SITE_ID}`, { credentials: 'include' }),
-                    fetch(`${API_BASE_URL}/api/drivers?siteId=${SITE_ID}`, { credentials: 'include' }),
+                    fetch(`${API_BASE_URL}/clients?siteId=${SITE_ID}`, { credentials: 'include' }),
+                    fetch(`${API_BASE_URL}/transporters?siteId=${SITE_ID}`, { credentials: 'include' }),
+                    fetch(`${API_BASE_URL}/drivers?siteId=${SITE_ID}`, { credentials: 'include' }),
                 ]);
                 const [cData, tData, dData] = await Promise.all([cRes.json(), tRes.json(), dRes.json()]);
                 setClients(cData.success ? cData.data : []);
@@ -287,9 +287,9 @@ export default function ManualOrderModal({ onClose, onSuccess }: Props) {
     const refreshMasterData = async () => {
         try {
             const [cRes, tRes, dRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/api/clients?siteId=${SITE_ID}`, { credentials: 'include' }),
-                fetch(`${API_BASE_URL}/api/transporters?siteId=${SITE_ID}`, { credentials: 'include' }),
-                fetch(`${API_BASE_URL}/api/drivers?siteId=${SITE_ID}`, { credentials: 'include' }),
+                fetch(`${API_BASE_URL}/clients?siteId=${SITE_ID}`, { credentials: 'include' }),
+                fetch(`${API_BASE_URL}/transporters?siteId=${SITE_ID}`, { credentials: 'include' }),
+                fetch(`${API_BASE_URL}/drivers?siteId=${SITE_ID}`, { credentials: 'include' }),
             ]);
             const [cData, tData, dData] = await Promise.all([cRes.json(), tRes.json(), dRes.json()]);
             if (cData.success) setClients(cData.data);
@@ -342,7 +342,7 @@ export default function ManualOrderModal({ onClose, onSuccess }: Props) {
         const filledAllocations = allocations.filter(a => a.vehicleReg.trim());
         setIsSaving(true);
         try {
-            const orderRes = await fetch(`${API_BASE_URL}/api/orders`, {
+            const orderRes = await fetch(`${API_BASE_URL}/orders`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 credentials: 'include',
                 body: JSON.stringify({
@@ -356,7 +356,7 @@ export default function ManualOrderModal({ onClose, onSuccess }: Props) {
 
             const newOrderId = orderResult.data.id;
             for (const alloc of filledAllocations) {
-                await fetch(`${API_BASE_URL}/api/truck-allocations`, {
+                await fetch(`${API_BASE_URL}/truck-allocations`, {
                     method: "POST", headers: { "Content-Type": "application/json" },
                     credentials: 'include',
                     body: JSON.stringify({

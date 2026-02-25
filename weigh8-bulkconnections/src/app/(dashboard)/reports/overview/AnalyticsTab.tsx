@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 const SITE_ID = process.env.NEXT_PUBLIC_SITE_ID || "2";
 
 interface Allocation {
@@ -58,9 +58,9 @@ export default function AnalyticsTab() {
             setLoading(true);
             setError(null);
 
-            const allocationsUrl = `${API_BASE_URL}/api/truck-allocations?limit=1000`;
-            const lionsJourneyUrl = `${API_BASE_URL}/api/site-journey/site/1/latest`;
-            const bulkJourneyUrl = `${API_BASE_URL}/api/site-journey/site/2/latest`;
+            const allocationsUrl = `${API_BASE_URL}/truck-allocations?limit=1000`;
+            const lionsJourneyUrl = `${API_BASE_URL}/site-journey/site/1/latest`;
+            const bulkJourneyUrl = `${API_BASE_URL}/site-journey/site/2/latest`;
 
             const [allocationsRes, lionsJourneyRes, bulkJourneyRes] = await Promise.all([
                 fetch(allocationsUrl, { credentials: 'include' }),

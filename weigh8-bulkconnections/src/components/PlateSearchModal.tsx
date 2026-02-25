@@ -3,7 +3,7 @@
 import { X, Search, Truck, Package, User, Scale, Clock, Filter } from "lucide-react";
 import { useState, useEffect } from "react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 interface Allocation {
   id: number;
@@ -132,7 +132,7 @@ export default function PlateSearchModal({
     try {
       // Fetch allocations that have checked in at Bulk Connections (site 2)
       const response = await fetch(
-        `${API_BASE_URL}/api/internal-weighbridge/checked-in-allocations`,
+        `${API_BASE_URL}/internal-weighbridge/checked-in-allocations`,
         { credentials: "include" }
       );
       if (response.ok) {

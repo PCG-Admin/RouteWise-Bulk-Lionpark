@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useState, useEffect, useMemo } from "react";
 import { VisitDetailSlideOver } from "@/components/VisitDetailSlideOver";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 function CustomSelect({ label, value, onChange, options, placeholder = "All" }: { label: string, value: string, onChange: (val: string) => void, options: string[], placeholder?: string }) {
     const [isOpen, setIsOpen] = useState(false);
@@ -296,8 +296,8 @@ export default function OrdersReceivedPage() {
         // derive stage for timeline context
         stage: a.bulkJourney?.status === 'departed' ? 'departed'
             : a.bulkJourney?.status === 'arrived' ? 'checked_in'
-            : a.lionsJourney?.status === 'arrived' ? 'staging'
-            : 'pending_arrival',
+                : a.lionsJourney?.status === 'arrived' ? 'staging'
+                    : 'pending_arrival',
     });
 
     return (

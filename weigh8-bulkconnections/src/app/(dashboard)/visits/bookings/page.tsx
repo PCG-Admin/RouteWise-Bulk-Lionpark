@@ -6,7 +6,7 @@ import { useState, useEffect } from "react";
 import { Modal } from "@/components/ui/Modal";
 import Pagination from "@/components/Pagination";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3000/api");
 
 export default function BookingsManagementPage() {
     const [bookings, setBookings] = useState([]);

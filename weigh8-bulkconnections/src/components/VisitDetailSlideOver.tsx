@@ -20,7 +20,7 @@ export function VisitDetailSlideOver({ truck, onClose, onStageChange }: VisitDet
         if (truck?.id) {
             const fetchJourneyHistory = async () => {
                 try {
-                    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001/api';
+                    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
                     const response = await fetch(`${API_BASE_URL}/site-journey/allocation/${truck.id}`, { credentials: 'include' });
                     if (response.ok) {
                         const data = await response.json();

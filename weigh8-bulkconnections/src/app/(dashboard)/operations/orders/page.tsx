@@ -11,7 +11,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { useToast } from "@/hooks/useToast";
 import { useConfirm } from "@/hooks/useConfirm";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 export default function OrdersPage() {
     const { toasts, removeToast, success, error } = useToast();
@@ -52,7 +52,7 @@ export default function OrdersPage() {
 
         async function fetchOrders() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/orders`, { credentials: 'include' });
+                const response = await fetch(`${API_BASE_URL}/orders`, { credentials: 'include' });
                 const data = await response.json();
 
                 if (isMounted && data.success) {
@@ -85,7 +85,7 @@ export default function OrdersPage() {
     const refetchOrders = async () => {
         try {
             setIsLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/orders`, { credentials: 'include' });
+            const response = await fetch(`${API_BASE_URL}/orders`, { credentials: 'include' });
             const data = await response.json();
             if (data.success) {
                 setOrders(data.data || []);
@@ -108,7 +108,7 @@ export default function OrdersPage() {
             formData.append('excelFile', uploadFile);
 
             // First, get preview of the data
-            const response = await fetch(`${API_BASE_URL}/api/bulk-orders/preview`, {
+            const response = await fetch(`${API_BASE_URL}/bulk-orders/preview`, {
                 method: 'POST',
                 credentials: 'include',
                 body: formData,
@@ -148,7 +148,7 @@ export default function OrdersPage() {
             formData.append('excelFile', uploadFile);
             formData.append('destinationSiteId', destinationSiteId);
 
-            const response = await fetch(`${API_BASE_URL}/api/bulk-orders/excel-upload`, {
+            const response = await fetch(`${API_BASE_URL}/bulk-orders/excel-upload`, {
                 method: 'POST',
                 credentials: 'include',
                 body: formData,
@@ -196,7 +196,7 @@ export default function OrdersPage() {
         if (!confirmed) return;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+            const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
                 method: 'DELETE',
                 credentials: 'include',
             });
@@ -224,7 +224,7 @@ export default function OrdersPage() {
         if (!editingOrder) return;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/orders/${editingOrder.id}`, {
+            const response = await fetch(`${API_BASE_URL}/orders/${editingOrder.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',

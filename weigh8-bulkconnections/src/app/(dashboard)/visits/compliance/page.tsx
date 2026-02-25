@@ -4,7 +4,7 @@ import { Calculator, Calendar, CheckCircle2, Clock, AlertTriangle, UserPlus, Ref
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3000/api");
 
 export default function VisitorCompliancePage() {
     const [visitors, setVisitors] = useState([]);

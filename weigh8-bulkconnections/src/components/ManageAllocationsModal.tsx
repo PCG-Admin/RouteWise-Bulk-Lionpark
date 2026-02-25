@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2, Edit2, CheckCircle, Loader2, Truck, AlertCircle, Search, Weight } from "lucide-react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 interface Allocation {
     id: number;
@@ -57,7 +57,7 @@ export default function ManageAllocationsModal({ order, onClose, onSuccess }: Pr
     const fetchAllocations = async () => {
         try {
             setIsLoading(true);
-            const res = await fetch(`${API_BASE_URL}/api/truck-allocations/${order.id}`, { credentials: 'include' });
+            const res = await fetch(`${API_BASE_URL}/truck-allocations/${order.id}`, { credentials: 'include' });
             const result = await res.json();
             setAllocations(result.success ? result.data : []);
         } catch {
@@ -93,7 +93,7 @@ export default function ManageAllocationsModal({ order, onClose, onSuccess }: Pr
     const saveEdit = async (id: number) => {
         setSavingId(id);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/truck-allocations/${id}`, {
+            const res = await fetch(`${API_BASE_URL}/truck-allocations/${id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 credentials: 'include',
@@ -118,7 +118,7 @@ export default function ManageAllocationsModal({ order, onClose, onSuccess }: Pr
         if (!confirm(`Delete allocation for ${plate}?`)) return;
         setDeletingId(id);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/truck-allocations/${id}`, { method: "DELETE", credentials: 'include' });
+            const res = await fetch(`${API_BASE_URL}/truck-allocations/${id}`, { method: "DELETE", credentials: 'include' });
             const result = await res.json();
             if (result.success) {
                 await fetchAllocations();
@@ -141,7 +141,7 @@ export default function ManageAllocationsModal({ order, onClose, onSuccess }: Pr
         setSavingId("new");
         setError(null);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/truck-allocations`, {
+            const res = await fetch(`${API_BASE_URL}/truck-allocations`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: 'include',

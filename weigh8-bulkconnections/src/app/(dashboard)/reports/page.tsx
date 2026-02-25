@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 const SITE_ID = process.env.NEXT_PUBLIC_SITE_ID || "2";
 
 interface Allocation {
@@ -51,8 +51,8 @@ export default function ReportsPage() {
             setLoading(true);
             setError(null);
 
-            const allocationsUrl = `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}&limit=1000`;
-            const journeyUrl = `${API_BASE_URL}/api/site-journey/site/${SITE_ID}/latest`;
+            const allocationsUrl = `${API_BASE_URL}/truck-allocations?siteId=${SITE_ID}&limit=1000`;
+            const journeyUrl = `${API_BASE_URL}/site-journey/site/${SITE_ID}/latest`;
 
             const [allocationsRes, journeyRes] = await Promise.all([
                 fetch(allocationsUrl, { credentials: 'include' }),

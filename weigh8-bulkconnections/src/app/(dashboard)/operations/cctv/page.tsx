@@ -4,7 +4,7 @@ import { AlertCircle, Camera, Cast, Maximize2, MoreVertical, Power, RefreshCw, S
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 interface CameraData {
     id: string;
@@ -37,7 +37,7 @@ export default function CCTVPage() {
         try {
             setLoading(true);
             setError(null);
-            const response = await fetch(`${API_BASE_URL}/api/cameras`, { credentials: 'include' });
+            const response = await fetch(`${API_BASE_URL}/cameras`, { credentials: 'include' });
             if (!response.ok) {
                 throw new Error('Failed to fetch cameras');
             }
@@ -82,7 +82,7 @@ export default function CCTVPage() {
             formData.append('direction', uploadDirection);
             formData.append('siteId', '2'); // Bulk Connections = site 2
 
-            const response = await fetch(`${API_BASE_URL}/api/anpr-mock/manual-upload`, {
+            const response = await fetch(`${API_BASE_URL}/anpr-mock/manual-upload`, {
                 method: 'POST',
                 credentials: 'include',
                 body: formData,
@@ -105,8 +105,8 @@ export default function CCTVPage() {
                     try {
                         // Check both allocations AND visits for the plate
                         const [allocResponse, visitsResponse] = await Promise.all([
-                            fetch(`${API_BASE_URL}/api/truck-allocations?vehicleReg=${encodeURIComponent(plate)}`),
-                            fetch(`${API_BASE_URL}/api/visits?plateNumber=${encodeURIComponent(plate)}`)
+                            fetch(`${API_BASE_URL}/truck-allocations?vehicleReg=${encodeURIComponent(plate)}`),
+                            fetch(`${API_BASE_URL}/visits?plateNumber=${encodeURIComponent(plate)}`)
                         ]);
 
                         const allocResult = await allocResponse.json();

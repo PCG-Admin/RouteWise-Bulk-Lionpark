@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X, Upload, FileText, AlertTriangle, CheckCircle2, Loader2, Truck, Package, Scale } from "lucide-react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 interface ExtractedData {
   ticketNumber: string;
@@ -108,7 +108,7 @@ export default function InternalWeighbridgeUploadModal({
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch(`${API_BASE_URL}/api/internal-weighbridge/upload-ticket`, {
+      const response = await fetch(`${API_BASE_URL}/internal-weighbridge/upload-ticket`, {
         method: "POST",
         body: formData,
         credentials: "include",
@@ -131,10 +131,38 @@ export default function InternalWeighbridgeUploadModal({
 
   const handleSave = async () => {
     if (!ocrResult) return;
+    setSaving(true);
+    setError(null);
 
-    // Ticket is already saved during upload, just refresh and close
-    onSuccess();
-    handleClose();
+    try {
+      // The backend needs extractedData, allocationId, discrepancy, and a file object with path and filename
+      const response = await fetch(`${API_BASE_URL}/internal-weighbridge/save-ticket`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          extractedData: ocrResult.extractedData,
+          allocationId: ocrResult.bestMatch?.id || null,
+          discrepancy: ocrResult.weightDiscrepancy || null,
+          file: {
+            path: ocrResult.pdfFileName, // Ideally we would get the actual save path from backend, but this is a placeholder
+            filename: ocrResult.pdfFileName
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to save ticket");
+      }
+
+      onSuccess();
+      handleClose();
+    } catch (err: any) {
+      setError(err.message || "Failed to save the ticket properly");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleClose = () => {

@@ -12,7 +12,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { useToast } from "@/hooks/useToast";
 import { useConfirm } from "@/hooks/useConfirm";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 interface InternalWeighbridgeTicket {
     id: number;
@@ -52,7 +52,7 @@ export default function InternalWeighbridgePage() {
     const fetchTransactions = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${API_BASE_URL}/api/internal-weighbridge/tickets`, { credentials: 'include' });
+            const response = await fetch(`${API_BASE_URL}/internal-weighbridge/tickets`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch tickets');
             const data = await response.json();
             setTickets(data.data || []);
@@ -75,7 +75,7 @@ export default function InternalWeighbridgePage() {
         if (!confirmed) return;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/api/internal-weighbridge/tickets/${ticketId}`, {
+            const response = await fetch(`${API_BASE_URL}/internal-weighbridge/tickets/${ticketId}`, {
                 method: 'DELETE',
                 credentials: 'include'
             });

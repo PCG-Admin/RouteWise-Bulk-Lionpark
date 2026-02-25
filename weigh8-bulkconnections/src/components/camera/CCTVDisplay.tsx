@@ -3,7 +3,7 @@
 import { Camera, RefreshCw, Maximize2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3000/api");
 
 interface CameraCapture {
   id: string;

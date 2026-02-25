@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Building2, Plus, Edit2, Trash2, CheckCircle, Loader2, Search, X, Mail, Phone, MapPin, User } from "lucide-react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 const SITE_ID = 2; // Bulk Connections
 
 interface Client {
@@ -38,7 +38,7 @@ export default function PartnersPage() {
     const fetchClients = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/clients?siteId=${SITE_ID}`, { credentials: 'include' });
+            const res = await fetch(`${API_BASE_URL}/clients?siteId=${SITE_ID}`, { credentials: 'include' });
             const result = await res.json();
             setClients(result.success ? result.data : []);
         } catch {
@@ -68,7 +68,7 @@ export default function PartnersPage() {
         if (!form.name.trim()) { setError("Company name is required"); return; }
         setSaving(true); setError(null);
         try {
-            const url = editing ? `${API_BASE_URL}/api/clients/${editing.id}` : `${API_BASE_URL}/api/clients`;
+            const url = editing ? `${API_BASE_URL}/clients/${editing.id}` : `${API_BASE_URL}/clients`;
             const method = editing ? "PUT" : "POST";
             const res = await fetch(url, {
                 method,
@@ -91,7 +91,7 @@ export default function PartnersPage() {
         if (!confirm(`Delete client "${name}"? This cannot be undone.`)) return;
         setDeletingId(id);
         try {
-            await fetch(`${API_BASE_URL}/api/clients/${id}`, { method: "DELETE", credentials: 'include' });
+            await fetch(`${API_BASE_URL}/clients/${id}`, { method: "DELETE", credentials: 'include' });
             fetchClients();
         } finally {
             setDeletingId(null);

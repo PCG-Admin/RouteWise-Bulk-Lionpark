@@ -4,7 +4,7 @@ import { X, Scale, Save } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/useToast";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 interface Allocation {
   id: number;
@@ -76,7 +76,7 @@ export default function WeightCaptureModal({
       const percentageDiff = allocNetWeight > 0 ? (difference / allocNetWeight) * 100 : 0;
 
       const response = await fetch(
-        `${API_BASE_URL}/api/internal-weighbridge/capture-weight`,
+        `${API_BASE_URL}/internal-weighbridge/capture-weight`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

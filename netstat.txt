@@ -1,0 +1,9 @@
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+tcp        0      0 127.0.0.1:44149         0.0.0.0:*               LISTEN      39116/containerd    
+tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      1681/sshd: /usr/sbi 
+tcp6       0      0 :::22                   :::*                    LISTEN      1681/sshd: /usr/sbi 
+udp        0      0 172.31.19.122:68        0.0.0.0:*                           1503/systemd-networ 
+udp        0      0 127.0.0.1:323           0.0.0.0:*                           1711/chronyd        
+udp6       0      0 ::1:323                 :::*                                1711/chronyd        
+udp6       0      0 fe80::4ac:ffff:fe67:546 :::*                                1503/systemd-networ 

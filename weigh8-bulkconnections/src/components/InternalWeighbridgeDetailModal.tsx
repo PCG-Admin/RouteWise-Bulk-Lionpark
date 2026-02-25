@@ -3,7 +3,7 @@
 import { X, FileText, Truck, Scale, AlertCircle, CheckCircle2, Package } from "lucide-react";
 import { useEffect, useState } from "react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 interface InternalWeighbridgeDetailModalProps {
   ticketId: number | null;
@@ -71,7 +71,7 @@ export default function InternalWeighbridgeDetailModal({
     try {
       // Fetch ticket details
       const ticketResponse = await fetch(
-        `${API_BASE_URL}/api/internal-weighbridge/tickets/${ticketId}`,
+        `${API_BASE_URL}/internal-weighbridge/tickets/${ticketId}`,
         { credentials: "include" }
       );
       if (ticketResponse.ok) {
@@ -83,7 +83,7 @@ export default function InternalWeighbridgeDetailModal({
         if (ticketData.data.truck_allocation_id) {
           console.log("🔍 Fetching allocation ID:", ticketData.data.truck_allocation_id);
           const allocResponse = await fetch(
-            `${API_BASE_URL}/api/truck-allocations/allocation/${ticketData.data.truck_allocation_id}`,
+            `${API_BASE_URL}/truck-allocations/allocation/${ticketData.data.truck_allocation_id}`,
             { credentials: "include" }
           );
           console.log("📦 Allocation response status:", allocResponse.status);

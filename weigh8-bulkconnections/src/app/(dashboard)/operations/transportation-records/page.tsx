@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
 import { Building2, Users, Plus, Edit2, Trash2, CheckCircle, Loader2, Search, X } from "lucide-react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 const SITE_ID = 2;
 
 type Tab = "transporters" | "drivers";
@@ -85,7 +85,7 @@ function TransportersTab() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/api/transporters?siteId=${SITE_ID}`, { credentials: 'include' });
+            const res = await fetch(`${API_BASE_URL}/transporters?siteId=${SITE_ID}`, { credentials: 'include' });
             const result = await res.json();
             setData(result.success ? result.data : []);
         } catch {
@@ -109,7 +109,7 @@ function TransportersTab() {
         if (!form.name.trim()) { setError("Name is required"); return; }
         setSaving(true); setError(null);
         try {
-            const url = editing ? `${API_BASE_URL}/api/transporters/${editing.id}` : `${API_BASE_URL}/api/transporters`;
+            const url = editing ? `${API_BASE_URL}/transporters/${editing.id}` : `${API_BASE_URL}/transporters`;
             const method = editing ? "PUT" : "POST";
             const payload = {
                 name: form.name.trim(),
@@ -141,7 +141,7 @@ function TransportersTab() {
         if (!confirm(`Delete transporter "${name}"?`)) return;
         setDeletingId(id);
         try {
-            await fetch(`${API_BASE_URL}/api/transporters/${id}`, { method: "DELETE", credentials: 'include' });
+            await fetch(`${API_BASE_URL}/transporters/${id}`, { method: "DELETE", credentials: 'include' });
             fetchData();
         } finally {
             setDeletingId(null);
@@ -272,8 +272,8 @@ function DriversTab() {
         setLoading(true);
         try {
             const [driversRes, transportersRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/api/drivers?siteId=${SITE_ID}`, { credentials: 'include' }),
-                fetch(`${API_BASE_URL}/api/transporters?siteId=${SITE_ID}`, { credentials: 'include' }),
+                fetch(`${API_BASE_URL}/drivers?siteId=${SITE_ID}`, { credentials: 'include' }),
+                fetch(`${API_BASE_URL}/transporters?siteId=${SITE_ID}`, { credentials: 'include' }),
             ]);
             const [driversResult, transportersResult] = await Promise.all([driversRes.json(), transportersRes.json()]);
             setData(driversResult.success ? driversResult.data : []);
@@ -299,7 +299,7 @@ function DriversTab() {
         if (!form.firstName.trim() || !form.lastName.trim()) { setError("First and last name are required"); return; }
         setSaving(true); setError(null);
         try {
-            const url = editing ? `${API_BASE_URL}/api/drivers/${editing.id}` : `${API_BASE_URL}/api/drivers`;
+            const url = editing ? `${API_BASE_URL}/drivers/${editing.id}` : `${API_BASE_URL}/drivers`;
             const method = editing ? "PUT" : "POST";
             const payload = {
                 firstName: form.firstName.trim(),
@@ -331,7 +331,7 @@ function DriversTab() {
         if (!confirm(`Delete driver "${name}"?`)) return;
         setDeletingId(id);
         try {
-            await fetch(`${API_BASE_URL}/api/drivers/${id}`, { method: "DELETE", credentials: 'include' });
+            await fetch(`${API_BASE_URL}/drivers/${id}`, { method: "DELETE", credentials: 'include' });
             fetchData();
         } finally {
             setDeletingId(null);

@@ -1,114 +1,82 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database
-  postgres:
+  routewise-postgres-prod:
     image: postgres:15-alpine
     container_name: routewise-postgres-prod
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-routewise_secure_pass_2025}
+      POSTGRES_PASSWORD: password
       POSTGRES_DB: routewise_db
     ports:
       - "5434:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_prod:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
 
-  # Redis for caching and pub/sub
-  redis:
+  routewise-redis-prod:
     image: redis:7-alpine
     container_name: routewise-redis-prod
     ports:
       - "6380:6379"
     volumes:
-      - redis_data:/data
+      - redis_data_prod:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
 
-  # Backend API
-  backend:
-    build:
-      context: ./routewise-backend
-      dockerfile: Dockerfile
+  routewise-backend-prod:
     image: routewise-backend:latest
     container_name: routewise-backend-prod
     environment:
       NODE_ENV: production
       PORT: 3001
-      DB_HOST: postgres
+      DB_HOST: routewise-postgres-prod
       DB_PORT: 5432
       DB_USER: postgres
-      DB_PASSWORD: ${DB_PASSWORD:-routewise_secure_pass_2025}
+      DB_PASSWORD: password
       DB_NAME: routewise_db
-      JWT_SECRET: ${JWT_SECRET:-prod_secret_key_change_this}
+      JWT_SECRET: prod_secret_key_123
       JWT_EXPIRES_IN: 24h
-      CORS_ORIGIN: https://lionpark-routewise.devmindrift.net,https://bulkconnections-routewise.devmindrift.net,https://routewise-orders.devmindrift.net,http://13.60.185.230:8081,http://13.60.185.230:8082,http://13.60.185.230:8083
+      GEMINI_API_KEY: "AIzaSyDq778HMw3PiPwRmj1__vvwNfUquEQtyh8"
+      CORS_ORIGIN: "https://lionpark-routewise.devmindrift.net,https://bulkconnections-routewise.devmindrift.net,https://lionpark-routewise.devmindirftsolutions.net,https://bulkconnections-routewise.devmindirftsolutions.net,https://lionpark-routewise.mindriftsolutions.net,https://bulkconnections-routewise.mindriftsolutions.net"
     ports:
-      - "8080:3001"
+      - "3011:3001"
     depends_on:
-      postgres:
+      routewise-postgres-prod:
         condition: service_healthy
-      redis:
+      routewise-redis-prod:
         condition: service_healthy
-    restart: unless-stopped
 
-  # Frontend 1: Mindrift Lionspark Weigh8 (Next.js)
-  mindrift-lionspark:
-    build:
-      context: ./mindrift-Lionspark-weigh8
-      dockerfile: Dockerfile
-    image: mindrift-lionspark:latest
-    container_name: mindrift-lionspark-prod
+  mindrift-lionspark-weigh8-prod:
+    image: mindrift-lionspark-weigh8:latest
+    container_name: mindrift-lionspark-weigh8-prod
     environment:
-      - NEXT_PUBLIC_API_URL=http://13.60.185.230:8080/api
       - NODE_ENV=production
       - PORT=3000
+      - NEXT_PUBLIC_API_URL=https://routewise-api.devmindrift.net
+      - NEXT_PUBLIC_SITE_ID=1
     ports:
-      - "8081:3000"
+      - "3010:3000"
     depends_on:
-      - backend
-    restart: unless-stopped
+      - routewise-backend-prod
 
-  # Frontend 2: Weigh8 Bulk Connections (Next.js)
-  weigh8-bulkconnections:
-    build:
-      context: ./weigh8-bulkconnections
-      dockerfile: Dockerfile
+  weigh8-bulkconnections-prod:
     image: weigh8-bulkconnections:latest
     container_name: weigh8-bulkconnections-prod
     environment:
-      - NEXT_PUBLIC_API_URL=http://13.60.185.230:8080/api
       - NODE_ENV=production
       - PORT=3000
+      - NEXT_PUBLIC_API_URL=https://routewise-api.devmindrift.net
     ports:
-      - "8082:3000"
+      - "3012:3000"
     depends_on:
-      - backend
-    restart: unless-stopped
-
-  # Frontend 3: Mindrift Orders (Vite + React)
-  mindrift-orders:
-    build:
-      context: ./Mindrift-Orders
-      dockerfile: Dockerfile
-    image: mindrift-orders:latest
-    container_name: mindrift-orders-prod
-    ports:
-      - "8083:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
+      - routewise-backend-prod
 
 volumes:
-  postgres_data:
-  redis_data:
+  postgres_data_prod:
+  redis_data_prod:

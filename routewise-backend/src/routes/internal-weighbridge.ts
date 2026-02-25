@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { db } from '../db';
-import { truckAllocations } from '../db/schema';
+import { truckAllocations, orders } from '../db/schema';
 import { eq, and, or, sql } from 'drizzle-orm';
 import multer from 'multer';
 import path from 'path';
@@ -124,8 +124,16 @@ Extract ALL numeric values exactly as shown. Return ONLY the JSON, no markdown f
         // Search for matching allocations (checked in at Bulk - site 2)
         // Match by: truck reg + order number
         const matchingAllocations = await db
-            .select()
+            .select({
+                allocation: truckAllocations,
+                orderNumber: orders.orderNumber,
+                clientOrderNumber: sql<string>`${orders.referenceNumber}`,
+                product: orders.product,
+                quantity: orders.quantity,
+                unit: orders.unit
+            })
             .from(truckAllocations)
+            .leftJoin(orders, eq(truckAllocations.orderId, orders.id))
             .where(
                 and(
                     eq(truckAllocations.tenantId, tenantId),
@@ -140,25 +148,37 @@ Extract ALL numeric values exactly as shown. Return ONLY the JSON, no markdown f
 
         // Filter to only allocations checked in at Bulk (site 2)
         // AND match order number
-        const filteredMatches = matchingAllocations.filter(a => {
+        const filteredMatches = matchingAllocations.filter(row => {
             const orderMatches =
-                a.orderNumber === extractedData.orderNumber ||
-                a.orderNumber === extractedData.instructionOrderNumber ||
-                a.clientOrderNumber === extractedData.orderNumber ||
-                a.clientOrderNumber === extractedData.instructionOrderNumber;
+                row.orderNumber === extractedData.orderNumber ||
+                row.orderNumber === extractedData.instructionOrderNumber ||
+                row.clientOrderNumber === extractedData.orderNumber ||
+                row.clientOrderNumber === extractedData.instructionOrderNumber;
 
             // Check if allocation has bulk journey (checked in at site 2)
             // This will be enriched by the frontend with journey data
             return orderMatches;
         });
 
-        let bestMatch = filteredMatches.length > 0 ? filteredMatches[0] : null;
+        const flatMatches = filteredMatches.map(row => ({
+            id: row.allocation.id,
+            orderNumber: row.orderNumber,
+            truckReg: row.allocation.vehicleReg,
+            freightCompanyName: row.allocation.transporter || 'Unknown',
+            driverName: row.allocation.driverName || 'Unknown',
+            product: row.product,
+            quantity: row.allocation.netWeight !== null ? row.allocation.netWeight : 'Pend. Weight',
+            quantityUnit: row.allocation.netWeight !== null ? 'kg' : '',
+            status: row.allocation.status,
+            netWeight: row.allocation.netWeight
+        }));
+        let bestMatch = flatMatches.length > 0 ? flatMatches[0] : null;
         let matchStatus = bestMatch ? 'matched' : 'unmatched';
 
         // Calculate weight discrepancy if matched
         let weightDiscrepancy = null;
         if (bestMatch && extractedData.netMass && bestMatch.netWeight) {
-            const allocNetWeight = parseFloat(bestMatch.netWeight);
+            const allocNetWeight = parseFloat(String(bestMatch.netWeight));
             const ticketNetWeight = extractedData.netMass;
             const difference = Math.abs(allocNetWeight - ticketNetWeight);
             const percentageDiff = allocNetWeight > 0
@@ -179,7 +199,7 @@ Extract ALL numeric values exactly as shown. Return ONLY the JSON, no markdown f
             success: true,
             data: {
                 extractedData: extractedData,
-                matchingAllocations: filteredMatches,
+                matchingAllocations: flatMatches,
                 bestMatch: bestMatch,
                 weightDiscrepancy: weightDiscrepancy,
                 ocrConfidence: 85, // Default confidence (Gemini doesn't provide this)
@@ -246,7 +266,7 @@ router.post('/capture-weight', requireAuth, async (req, res) => {
         const alloc = allocation.rows[0];
 
         // Calculate weight discrepancy
-        const allocNetWeight = parseFloat(alloc.net_weight || alloc.netWeight || '0');
+        const allocNetWeight = parseFloat(String(alloc.net_weight || alloc.netWeight || '0'));
         const capturedNetWeight = parseFloat(netMass || '0');
         const difference = Math.abs(allocNetWeight - capturedNetWeight);
         const percentageDiff = allocNetWeight > 0 ? (difference / allocNetWeight) * 100 : 0;
@@ -326,7 +346,7 @@ router.post('/save-ticket', requireAuth, async (req, res) => {
         } = req.body;
 
         // Insert into database
-        const insertQuery = `
+        const insertQuery = sql`
             INSERT INTO bulk_internal_weighbridge_tickets (
                 tenant_id, truck_allocation_id, match_status,
                 ticket_number, instruction_order_number,
@@ -342,44 +362,41 @@ router.post('/save-ticket', requireAuth, async (req, res) => {
                 verified_by_user, user_corrections,
                 status
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                $17, $18, $19, $20, $21, $22, $23, $24, NOW(),
-                $25, $26, $27, $28, $29, $30
+                ${tenantId}, 
+                ${allocationId || null}, 
+                ${allocationId ? 'matched' : 'unmatched'},
+                ${extractedData.ticketNumber}, 
+                ${extractedData.instructionOrderNumber},
+                ${extractedData.truckReg}, 
+                ${extractedData.trailerReg}, 
+                ${extractedData.haulier},
+                ${extractedData.driverName}, 
+                ${extractedData.driverIdNumber},
+                ${extractedData.orderNumber}, 
+                ${extractedData.customerName}, 
+                ${extractedData.product}, 
+                ${extractedData.grade}, 
+                ${extractedData.destination}, 
+                ${extractedData.stockpile},
+                ${extractedData.grossMass}, 
+                ${extractedData.tareMass}, 
+                ${extractedData.netMass},
+                ${extractedData.arrivalTime}, 
+                ${extractedData.departureTime},
+                ${extractedData.incomingClerkEmail},
+                ${file.path}, 
+                ${file.filename}, 
+                NOW(),
+                ${discrepancy?.hasDiscrepancy || false}, 
+                ${discrepancy?.amount || null}, 
+                ${discrepancy?.percentage || null},
+                true, 
+                ${JSON.stringify(userCorrections || {})},
+                ${discrepancy?.hasDiscrepancy ? 'flagged' : 'verified'}
             ) RETURNING *
         `;
 
-        const result = await db.execute(insertQuery, [
-            tenantId,
-            allocationId || null,
-            allocationId ? 'matched' : 'unmatched',
-            extractedData.ticketNumber,
-            extractedData.instructionOrderNumber,
-            extractedData.truckReg,
-            extractedData.trailerReg,
-            extractedData.haulier,
-            extractedData.driverName,
-            extractedData.driverIdNumber,
-            extractedData.orderNumber,
-            extractedData.customerName,
-            extractedData.product,
-            extractedData.grade,
-            extractedData.destination,
-            extractedData.stockpile,
-            extractedData.grossMass,
-            extractedData.tareMass,
-            extractedData.netMass,
-            extractedData.arrivalTime,
-            extractedData.departureTime,
-            extractedData.incomingClerkEmail,
-            file.path,
-            file.filename,
-            discrepancy?.hasDiscrepancy || false,
-            discrepancy?.amount || null,
-            discrepancy?.percentage || null,
-            true,
-            JSON.stringify(userCorrections || {}),
-            discrepancy?.hasDiscrepancy ? 'flagged' : 'verified'
-        ]);
+        const result = await db.execute(insertQuery);
 
         console.log(`✓ Saved internal weighbridge ticket ${extractedData.ticketNumber}`);
 

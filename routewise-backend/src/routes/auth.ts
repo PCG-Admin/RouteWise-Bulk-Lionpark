@@ -75,12 +75,23 @@ router.post('/login', async (req, res) => {
     // that both frontends will check for when no site-scoped cookie is found.
     const isProduction = process.env.NODE_ENV === 'production';
     const cookieName = user.siteId ? `token_s${user.siteId}` : `token_${user.tenantId}`;
+
+    // Determine wildcard root domain from request origin for cross-subdomain cookie sharing
+    const origin = req.headers.origin || '';
+    let cookieDomain: string | undefined = undefined;
+    if (isProduction) {
+      if (origin.includes('.devmindrift.net')) cookieDomain = '.devmindrift.net';
+      else if (origin.includes('.devmindirftsolutions.net')) cookieDomain = '.devmindirftsolutions.net';
+      else if (origin.includes('.mindriftsolutions.net')) cookieDomain = '.mindriftsolutions.net';
+    }
+
     res.cookie(cookieName, token, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      sameSite: isProduction ? 'none' : 'lax', // 'none' is required for cross-site API calls when setting credentials
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       path: '/',
+      domain: cookieDomain, // Allow the cookie to be read by the frontend Next.js middleware
     });
 
     res.json({

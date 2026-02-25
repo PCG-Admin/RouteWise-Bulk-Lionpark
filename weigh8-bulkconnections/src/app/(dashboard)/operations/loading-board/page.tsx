@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import Toast from "@/components/Toast";
 import { useToast } from "@/hooks/useToast";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001/api";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 type Stage = "staging" | "pending_arrival" | "checked_in" | "departed";
 
@@ -268,13 +268,12 @@ export default function LoadingBoardPage() {
                 // Continue without journey data
             }
 
-            // Transform truck allocations with journey-aware status
             // BULK VIEW: Show full supply chain (Lions → Bulk)
             const transformedTrucks = (allocationsData.data || [])
                 .filter((allocation: any) => {
-                    // Only show Bulk-bound allocations (destination = site 2)
-                    // OR allocations that have visited Lions (part of our supply chain)
-                    return allocation.siteId === 2 || lionsJourneyMap.has(allocation.id);
+                    // Show Bulk-bound allocations OR allocations that have visited Lions
+                    // OR allocations that are simply in the system and need processing
+                    return allocation.siteId === 2 || lionsJourneyMap.has(allocation.id) || !allocation.siteId;
                 })
                 .map((allocation: any) => {
                     const lionsJourney = lionsJourneyMap.get(allocation.id);
@@ -421,7 +420,7 @@ export default function LoadingBoardPage() {
                     : candidates.filter((a: any) =>
                         a.status !== 'completed' &&
                         (a.driverValidationStatus === 'ready_for_dispatch' || a.status === 'arrived' || a.status === 'weighing')
-                      );
+                    );
                 const pool = activeCandidates.length > 0 ? activeCandidates : candidates;
                 const best = pool.sort((a: any, b: any) => {
                     const distA = a.scheduledDate ? Math.abs(new Date(a.scheduledDate).getTime() - now) : Infinity;

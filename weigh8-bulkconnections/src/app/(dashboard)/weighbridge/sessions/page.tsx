@@ -5,7 +5,7 @@ import { PlayCircle, StopCircle, Scale, Clock, Truck, Package, User, Loader2, Al
 import { cn } from "@/lib/utils";
 import Pagination from "@/components/Pagination";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : "http://localhost:3001/api");
 
 interface Session {
     id: string;
@@ -37,7 +37,7 @@ export default function SessionsPage() {
         try {
             setLoading(true);
             setError(null);
-            const response = await fetch(`${API_BASE_URL}/api/weighbridge/sessions`, { credentials: 'include' });
+            const response = await fetch(`${API_BASE_URL}/weighbridge/sessions`, { credentials: 'include' });
             if (!response.ok) {
                 throw new Error('Failed to fetch sessions');
             }
