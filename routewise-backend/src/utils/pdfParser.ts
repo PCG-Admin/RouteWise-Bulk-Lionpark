@@ -25,56 +25,55 @@ export async function parsePDFFile(buffer: Buffer, filename: string): Promise<Pa
 
     // Use Gemini 2.5 Flash model
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-flash',
     });
 
     console.log('🤖 Sending PDF to Gemini for analysis...');
 
     // Create detailed prompt for structured extraction
-    const prompt = `Analyze this shipping/logistics order document and extract ALL truck allocation details into a structured JSON format.
+    const prompt = `Analyze this shipping/logistics document and extract ALL vehicle/truck allocation details into a structured JSON format.
 
-The document may contain:
-- Order number or dispatch ticket number
-- Customer/client name
-- Product/material type (Chrome Concentrate, Iron Ore, etc.)
-- Origin/source location
-- Destination location
-- Truck details (vehicle registration, driver, weights, dates)
+The document may be one of several types:
+1. WEIGHBRIDGE DETAILS REPORT (e.g. Northam Zondereinde): Contains columns like Date, Tran No, OrderNo, Tran Type, Tare, Gross, Nett, Product, Truck Reg, Transporter, Supplier, Destination. The order number is usually in a HEADER SECTION at the top (not per row). Extract the PRIMARY order number from the report header.
+2. FLEET LIST / DRIVER ASSIGNMENT (e.g. Kookfontein): A daily list assigning trucks to an order. Contains columns like Fleet#, Horse (truck reg), Trailer 1, Trailer 2, Driver, Driver ID. Weight data may not exist. The order number and loading/offloading points appear in the header.
+3. DISPATCH TICKET / ORDER REPORT: Standard dispatch document with order details and per-truck weight data.
 
 IMPORTANT EXTRACTION RULES:
 1. Extract EVERY truck/vehicle entry from the document
-2. Look for columns like: Registration, Ticket No, Driver, Transporter, Gross, Tare, Nett/Net, Date
-3. Handle multiple formats (table layouts, detailed reports, etc.)
-4. Extract ALL weight values (gross, tare, net) in their original units
-5. Parse dates in any format (DD/MM/YYYY, YYYY-MM-DD, etc.)
-6. Capture transporter/haulier names
-7. Look for order numbers in headers or ticket references
+2. For WEIGHBRIDGE REPORTS: The OrderNo column in data rows is the order number — use it. Extract Tran No as ticketNo.
+3. For FLEET LISTS: "Horse" column = truck registration. Trailers are separate registrations. No weight data is fine — leave weights empty.
+4. For any format: origin = mine/site name from document header; destination = port or offloading point from document header
+5. Extract ALL weight values (gross, tare, net) in their original units
+6. Parse dates in any format and output as YYYY-MM-DD
+7. Capture driver names AND driver ID numbers where available
+8. Look for order number in: document title, header rows, "Order No", "OrderNo", "Order Number" fields
 
-Return ONLY a valid JSON object with this exact structure:
+Return ONLY a valid JSON object with this exact structure (no markdown, no extra text):
 {
-  "orderNumber": "extracted order number or generate from context",
+  "orderNumber": "extracted order number from document header",
   "product": "material type (e.g., Chrome Concentrate MG, Iron Ore)",
-  "clientName": "customer or supplier name",
-  "originAddress": "origin location or mine name",
-  "destinationAddress": "destination location or port name",
+  "clientName": "customer, supplier, or transporter company name",
+  "originAddress": "origin mine or loading point name",
+  "destinationAddress": "destination port or offloading point name",
   "totalQuantity": 0,
   "unit": "kg or tons",
   "allocations": [
     {
-      "vehicleReg": "vehicle registration number",
-      "ticketNo": "ticket or reference number",
-      "driverName": "driver name if available",
+      "vehicleReg": "horse/truck registration number (not trailer)",
+      "ticketNo": "ticket, transaction, or reference number",
+      "driverName": "driver full name if available",
+      "driverId": "driver ID number if available",
       "transporter": "transporter/haulier company name",
-      "grossWeight": "gross weight as string with number",
-      "tareWeight": "tare weight as string with number",
-      "netWeight": "net weight as string with number",
+      "grossWeight": "gross weight as numeric string, empty string if not available",
+      "tareWeight": "tare weight as numeric string, empty string if not available",
+      "netWeight": "net weight as numeric string, empty string if not available",
       "scheduledDate": "YYYY-MM-DD format or null",
-      "productDescription": "product details if different per truck"
+      "productDescription": "product per truck if specified, otherwise null"
     }
   ]
 }
 
-CRITICAL: Extract ALL trucks from the document. If you see 50 trucks, return 50 entries.`;
+CRITICAL: Extract ALL trucks from the document. If you see 50 trucks, return 50 entries. Never truncate.`;
 
     const result = await model.generateContent([
       {
@@ -112,19 +111,26 @@ CRITICAL: Extract ALL trucks from the document. If you see 50 trucks, return 50 
     console.log(`  Allocations: ${extracted.allocations?.length || 0}`);
 
     // Convert dates to Date objects
-    const allocations: ParsedTruckAllocation[] = (extracted.allocations || []).map((alloc: any) => ({
-      vehicleReg: alloc.vehicleReg || '',
-      ticketNo: alloc.ticketNo || undefined,
-      driverName: alloc.driverName || undefined,
-      driverPhone: alloc.driverPhone || undefined,
-      driverId: alloc.driverId || undefined,
-      transporter: alloc.transporter || undefined,
-      grossWeight: alloc.grossWeight || undefined,
-      tareWeight: alloc.tareWeight || undefined,
-      netWeight: alloc.netWeight || undefined,
-      scheduledDate: alloc.scheduledDate ? new Date(alloc.scheduledDate) : undefined,
-      productDescription: alloc.productDescription || undefined,
-    }));
+    const allocations: ParsedTruckAllocation[] = (extracted.allocations || []).map((alloc: any) => {
+      let scheduledDate: Date | undefined;
+      if (alloc.scheduledDate) {
+        const d = new Date(alloc.scheduledDate);
+        if (!isNaN(d.getTime())) scheduledDate = d;
+      }
+      return {
+        vehicleReg: alloc.vehicleReg || '',
+        ticketNo: alloc.ticketNo || undefined,
+        driverName: alloc.driverName || undefined,
+        driverPhone: alloc.driverPhone || undefined,
+        driverId: alloc.driverId || undefined,
+        transporter: alloc.transporter || undefined,
+        grossWeight: alloc.grossWeight || undefined,
+        tareWeight: alloc.tareWeight || undefined,
+        netWeight: alloc.netWeight || undefined,
+        scheduledDate,
+        productDescription: alloc.productDescription || undefined,
+      };
+    });
 
     // Calculate total quantity if not provided
     let totalQuantity = extracted.totalQuantity || 0;

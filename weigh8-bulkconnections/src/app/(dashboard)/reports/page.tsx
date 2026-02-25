@@ -51,7 +51,7 @@ export default function ReportsPage() {
             setLoading(true);
             setError(null);
 
-            const allocationsUrl = `${API_BASE_URL}/truck-allocations?siteId=${SITE_ID}&limit=1000`;
+            const allocationsUrl = `${API_BASE_URL}/truck-allocations?siteId=${SITE_ID}&limit=5000`;
             const journeyUrl = `${API_BASE_URL}/site-journey/site/${SITE_ID}/latest`;
 
             const [allocationsRes, journeyRes] = await Promise.all([

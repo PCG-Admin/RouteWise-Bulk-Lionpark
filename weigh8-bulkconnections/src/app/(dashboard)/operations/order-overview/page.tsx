@@ -130,7 +130,7 @@ export default function OrdersReceivedPage() {
             setLoading(true);
             setError(null);
 
-            const response = await fetch(`${API_BASE_URL}/truck-allocations?limit=500`, { credentials: 'include' });
+            const response = await fetch(`${API_BASE_URL}/truck-allocations?limit=5000`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to fetch allocations');
             const data = await response.json();
 

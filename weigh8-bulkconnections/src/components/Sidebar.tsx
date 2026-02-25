@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface NavigationItem {
     name: string;
@@ -108,6 +108,15 @@ export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
     const pathname = usePathname();
     const [openGroups, setOpenGroups] = useState<string[]>(["Operations", "Weighbridge", "Business"]);
     const [isHovered, setIsHovered] = useState(false);
+    const [user, setUser] = useState<{ fullName: string; role: string } | null>(null);
+
+    useEffect(() => {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        fetch(`${API_BASE_URL}/api/auth/me`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(data => { if (data.success) setUser(data.user); })
+            .catch(() => {});
+    }, []);
 
     // Sidebar is open if it's NOT manually collapsed OR if it's being hovered
     const isSidebarOpen = !isCollapsed || isHovered;
@@ -243,7 +252,29 @@ export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
                 ))}
             </nav>
 
-            <div className="p-4 border-t border-slate-800 space-y-4">
+            <div className="p-4 border-t border-slate-800 space-y-3">
+                {/* User info */}
+                {isSidebarOpen ? (
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-800/50">
+                        <div className="h-8 w-8 rounded-full bg-blue-900/60 flex items-center justify-center text-blue-300 font-bold text-xs shrink-0">
+                            {user?.fullName
+                                ? user.fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
+                                : '?'}
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-xs font-semibold text-white truncate">{user?.fullName || '—'}</p>
+                            <p className="text-[10px] text-slate-400 capitalize truncate">{user?.role || ''}</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex justify-center">
+                        <div className="h-8 w-8 rounded-full bg-blue-900/60 flex items-center justify-center text-blue-300 font-bold text-xs" title={user?.fullName || ''}>
+                            {user?.fullName
+                                ? user.fullName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
+                                : '?'}
+                        </div>
+                    </div>
+                )}
                 <Link href="/login" className={cn(
                     "flex items-center w-full px-3 py-2.5 text-sm font-medium text-red-500 rounded-lg hover:bg-red-500/10 transition-colors",
                     !isSidebarOpen ? "justify-center" : ""

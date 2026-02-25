@@ -317,7 +317,7 @@ router.get('/', requireAuth, async (req, res) => {
     // Pagination
     const pageNum = parseInt(String(page));
     const limitNum = parseInt(String(limit));
-    const safeLimit = Math.min(limitNum, 500);
+    const safeLimit = Math.min(limitNum, 5000);
     const offset = (pageNum - 1) * safeLimit;
 
     // Execute query with pagination - parallel queries for data + count

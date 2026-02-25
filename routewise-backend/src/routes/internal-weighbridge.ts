@@ -451,10 +451,44 @@ router.get('/checked-in-allocations', requireAuth, async (req, res) => {
 
         console.log(`📋 Found ${result.rows.length} unweighed allocations (checked in at Bulk)`);
 
+        // Map arrival_time -> checkInTime so the frontend date filter works
+        const mappedRows = result.rows.map(row => ({
+            ...row,
+            checkInTime: row.arrival_time,
+        }));
+
+        // Count all allocations checked in at site 2 (weighed + unweighed)
+        const totalCheckedInQuery = sql`
+            SELECT COUNT(DISTINCT ta.id) as count
+            FROM truck_allocations ta
+            INNER JOIN allocation_site_journey asj ON ta.id = asj.allocation_id
+            WHERE ta.tenant_id = ${tenantId}
+            AND asj.site_id = 2
+            AND asj.event_type = 'arrival'
+        `;
+
+        // Count allocations that already have a weighbridge ticket
+        const totalWeighedQuery = sql`
+            SELECT COUNT(DISTINCT ta.id) as count
+            FROM truck_allocations ta
+            INNER JOIN allocation_site_journey asj ON ta.id = asj.allocation_id
+            INNER JOIN bulk_internal_weighbridge_tickets biwt ON ta.id = biwt.truck_allocation_id
+            WHERE ta.tenant_id = ${tenantId}
+            AND asj.site_id = 2
+            AND asj.event_type = 'arrival'
+        `;
+
+        const [totalCheckedInResult, totalWeighedResult] = await Promise.all([
+            db.execute(totalCheckedInQuery),
+            db.execute(totalWeighedQuery),
+        ]);
+
         res.json({
             success: true,
-            data: result.rows,
-            total: result.rows.length
+            data: mappedRows,
+            total: mappedRows.length,
+            totalCheckedIn: parseInt(String(totalCheckedInResult.rows[0]?.count || '0')),
+            totalWeighed: parseInt(String(totalWeighedResult.rows[0]?.count || '0')),
         });
 
     } catch (error) {

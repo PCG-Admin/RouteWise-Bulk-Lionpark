@@ -42,7 +42,7 @@ services:
       DB_NAME: routewise_db
       JWT_SECRET: prod_secret_key_123
       JWT_EXPIRES_IN: 24h
-      GEMINI_API_KEY: "AIzaSyDq778HMw3PiPwRmj1__vvwNfUquEQtyh8"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
       CORS_ORIGIN: "https://lionpark-routewise.devmindrift.net,https://bulkconnections-routewise.devmindrift.net,https://lionpark-routewise.devmindirftsolutions.net,https://bulkconnections-routewise.devmindirftsolutions.net,https://lionpark-routewise.mindriftsolutions.net,https://bulkconnections-routewise.mindriftsolutions.net"
     ports:
       - "3011:3001"

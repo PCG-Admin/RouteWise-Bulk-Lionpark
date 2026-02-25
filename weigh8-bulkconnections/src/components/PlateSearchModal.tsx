@@ -416,7 +416,7 @@ export default function PlateSearchModal({
                   ? new Date(allocation.checkInTime)
                   : null;
                 const timeAgo = checkInTime
-                  ? getTimeAgo(checkInTime)
+                  ? checkInTime.toLocaleString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                   : "Unknown";
 
                 return (

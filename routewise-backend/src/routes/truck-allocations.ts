@@ -366,7 +366,7 @@ router.get('/', requireAuth, async (req, res) => {
     // Pagination
     const pageNum = parseInt(String(page));
     const limitNum = parseInt(String(limit));
-    const safeLimit = Math.min(limitNum, 500);
+    const safeLimit = Math.min(limitNum, 5000);
     const offset = (pageNum - 1) * safeLimit;
 
     // Import sites table
@@ -962,6 +962,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
     await Promise.all([
       invalidateCache('truck-allocations:*'),
       invalidateCache('orders:*'),
+      invalidateCache('visits:*'),
     ]);
 
     res.json({ success: true, message: `Allocation ${allocation.vehicleReg} deleted` });

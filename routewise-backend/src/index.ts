@@ -23,6 +23,7 @@ import driversRoutes from './routes/drivers';
 import visitsRoutes from './routes/visits';
 import siteJourneyRoutes from './routes/site-journey';
 import internalWeighbridgeRoutes from './routes/internal-weighbridge';
+import camerasRoutes from './routes/cameras';
 import { anprCheckerService } from './services/anpr-checker';
 import { requestLogger, performanceTracker, performanceMetrics } from './middleware/logger';
 import { getCacheStats } from './utils/cache';
@@ -150,6 +151,7 @@ app.use('/api/drivers', driversRoutes);
 app.use('/api/visits', visitsRoutes);
 app.use('/api/site-journey', siteJourneyRoutes);
 app.use('/api/internal-weighbridge', internalWeighbridgeRoutes);
+app.use('/api/cameras', camerasRoutes);
 
 // 404 handler
 app.use((req, res) => {

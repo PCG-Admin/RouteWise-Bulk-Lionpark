@@ -50,6 +50,9 @@ services:
       JWT_EXPIRES_IN: 24h
       CORS_ORIGIN: http://localhost:5173,http://localhost:3000,http://localhost:3002,http://localhost:3003
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Polling enables tsx watch to detect file changes from Windows host (inotify doesn't work across WSL2)
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "1000"
     ports:
       - "3001:3001"
     depends_on:

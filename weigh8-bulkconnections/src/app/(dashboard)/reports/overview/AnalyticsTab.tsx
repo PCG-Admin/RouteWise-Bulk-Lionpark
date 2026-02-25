@@ -58,7 +58,7 @@ export default function AnalyticsTab() {
             setLoading(true);
             setError(null);
 
-            const allocationsUrl = `${API_BASE_URL}/truck-allocations?limit=1000`;
+            const allocationsUrl = `${API_BASE_URL}/truck-allocations?limit=5000`;
             const lionsJourneyUrl = `${API_BASE_URL}/site-journey/site/1/latest`;
             const bulkJourneyUrl = `${API_BASE_URL}/site-journey/site/2/latest`;
 

@@ -232,7 +232,7 @@ export default function LoadingBoardPage() {
             setLoading(true);
 
             // Fetch allocations — use limit=500 to ensure all active trucks are returned
-            const allocationsResponse = await fetch(`${API_BASE_URL}/truck-allocations?limit=500`, { credentials: 'include' });
+            const allocationsResponse = await fetch(`${API_BASE_URL}/truck-allocations?limit=5000`, { credentials: 'include' });
             if (!allocationsResponse.ok) throw new Error('Failed to fetch trucks');
             const allocationsData = await allocationsResponse.json();
 
@@ -398,7 +398,7 @@ export default function LoadingBoardPage() {
         setSearchedAllocation(null);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/truck-allocations?limit=500`, { credentials: 'include' });
+            const response = await fetch(`${API_BASE_URL}/truck-allocations?limit=5000`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to search allocations');
 
             const data = await response.json();

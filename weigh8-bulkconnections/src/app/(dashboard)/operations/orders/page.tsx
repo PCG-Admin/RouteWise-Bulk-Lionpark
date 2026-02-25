@@ -52,7 +52,7 @@ export default function OrdersPage() {
 
         async function fetchOrders() {
             try {
-                const response = await fetch(`${API_BASE_URL}/orders`, { credentials: 'include' });
+                const response = await fetch(`${API_BASE_URL}/orders?limit=5000`, { credentials: 'include' });
                 const data = await response.json();
 
                 if (isMounted && data.success) {
@@ -85,7 +85,7 @@ export default function OrdersPage() {
     const refetchOrders = async () => {
         try {
             setIsLoading(true);
-            const response = await fetch(`${API_BASE_URL}/orders`, { credentials: 'include' });
+            const response = await fetch(`${API_BASE_URL}/orders?limit=5000`, { credentials: 'include' });
             const data = await response.json();
             if (data.success) {
                 setOrders(data.data || []);
@@ -724,10 +724,6 @@ export default function OrdersPage() {
                                     <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                                         <p className="text-xs text-slate-500 uppercase mb-1">Client</p>
                                         <p className="text-sm font-semibold text-slate-900">{previewData.summary.clientName || 'N/A'}</p>
-                                    </div>
-                                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                                        <p className="text-xs text-slate-500 uppercase mb-1">Format Detected</p>
-                                        <p className="text-sm font-semibold text-slate-900 capitalize">{previewData.format}</p>
                                     </div>
                                 </div>
 

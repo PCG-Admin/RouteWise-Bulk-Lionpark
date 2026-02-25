@@ -26,19 +26,6 @@ export default function DashboardLayoutClient({
                     <div className="absolute bottom-[-10%] left-[-5%] w-96 h-96 bg-indigo-400/20 rounded-full blur-3xl opacity-50" />
                 </div>
 
-                {/* Header with User Profile */}
-                <div className="relative z-20 flex justify-end mb-6">
-                    <div className="flex items-center gap-3 bg-white pl-4 pr-1.5 py-1.5 rounded-full border border-slate-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-                        <div className="text-right">
-                            <p className="text-xs font-bold text-slate-900">Bulk Admin</p>
-                            <p className="text-[10px] text-slate-500 font-medium tracking-wide">Administrator</p>
-                        </div>
-                        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold border border-blue-200">
-                            BA
-                        </div>
-                    </div>
-                </div>
-
                 <div className="relative z-10 max-w-7xl mx-auto">
                     {children}
                 </div>

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db';
 import { plannedVisits as visits, orders, clients, parkingTickets } from '../db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
-import { getCached, setCache } from '../utils/cache';
+import { getCached, setCache, invalidateCache } from '../utils/cache';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 
 const router = Router();
@@ -46,7 +46,7 @@ router.get('/', requireAuth, async (req, res) => {
     // Pagination
     const pageNum = parseInt(String(page));
     const limitNum = parseInt(String(limit));
-    const safeLimit = Math.min(limitNum, 100);
+    const safeLimit = Math.min(limitNum, 1000);
     const offset = (pageNum - 1) * safeLimit;
 
     // Import sites table
@@ -126,6 +126,42 @@ router.get('/', requireAuth, async (req, res) => {
       success: false,
       error: 'Failed to fetch visits',
     });
+  }
+});
+
+/**
+ * DELETE /api/visits/:id
+ * Delete a single planned visit (non-matched plate record)
+ */
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const tenantId = (req as AuthRequest).auth!.tenantId;
+    const visitId = parseInt(req.params.id);
+
+    if (isNaN(visitId)) {
+      return res.status(400).json({ success: false, error: 'Invalid visit ID' });
+    }
+
+    const [visit] = await db
+      .select()
+      .from(visits)
+      .where(and(eq(visits.id, visitId), eq(visits.tenantId, tenantId)))
+      .limit(1);
+
+    if (!visit) {
+      return res.status(404).json({ success: false, error: 'Visit not found' });
+    }
+
+    // Delete related parking tickets first, then the visit
+    await db.delete(parkingTickets).where(eq(parkingTickets.visitId, visitId));
+    await db.delete(visits).where(eq(visits.id, visitId));
+
+    await invalidateCache('visits:*');
+
+    res.json({ success: true, message: `Visit record for ${visit.plateNumber} deleted` });
+  } catch (error) {
+    console.error('Delete visit error:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete visit' });
   }
 });
 

@@ -21,6 +21,195 @@ const stages: { id: Stage; title: string; color: string; icon: any; statuses: st
     { id: "departed", title: "Departed", color: "text-purple-500", icon: Truck, statuses: ['departed', 'completed', 'cancelled'] },
 ];
 
+type FilterState = {
+    customer: string;
+    date: string;
+    origin: string;
+    transporter: string;
+    product: string;
+    search: string;
+    entryType: string;
+};
+
+type FilterOpenState = {
+    customer: boolean;
+    origin: boolean;
+    transporter: boolean;
+    product: boolean;
+    entryType: boolean;
+};
+
+function FilterDropdown({
+    label,
+    value,
+    options,
+    isOpen,
+    setIsOpen,
+    onSelect,
+}: {
+    label: string;
+    value: string;
+    options: string[];
+    isOpen: boolean;
+    setIsOpen: (v: boolean) => void;
+    onSelect: (v: string) => void;
+}) {
+    return (
+        <div className="relative flex-1">
+            <div
+                onClick={() => setIsOpen(!isOpen)}
+                className="p-2 bg-slate-50/50 rounded-lg hover:bg-slate-50 transition cursor-pointer border border-transparent hover:border-slate-200"
+            >
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
+                <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-slate-700 truncate">{value}</p>
+                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                </div>
+            </div>
+            {isOpen && (
+                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                    {options.map(option => (
+                        <button
+                            key={option}
+                            onClick={() => {
+                                onSelect(option);
+                                setIsOpen(false);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
+                        >
+                            {option}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function FilterBar({
+    onExpandMode = false,
+    openState,
+    setOpenState,
+    filters,
+    setFilters,
+    uniqueCustomers,
+    uniqueProducts,
+    uniqueOrigins,
+    uniqueTransporters,
+    hasActiveFilters,
+    clearFilters,
+    filteredCount,
+    totalCount,
+}: {
+    onExpandMode?: boolean;
+    openState: FilterOpenState;
+    setOpenState: (v: FilterOpenState) => void;
+    filters: FilterState;
+    setFilters: (v: FilterState) => void;
+    uniqueCustomers: string[];
+    uniqueProducts: string[];
+    uniqueOrigins: string[];
+    uniqueTransporters: string[];
+    hasActiveFilters: boolean;
+    clearFilters: () => void;
+    filteredCount: number;
+    totalCount: number;
+}) {
+    return (
+        <div className={cn(
+            "bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2 transition-all",
+            onExpandMode ? "border-0 shadow-none p-0" : ""
+        )}>
+            {/* Search row */}
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                    type="text"
+                    value={filters.search}
+                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                    placeholder="Search by plate, driver, order #, product, customer..."
+                    className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+            </div>
+            {/* Dropdown filters row */}
+            <div className="flex flex-col md:flex-row gap-2">
+                <FilterDropdown
+                    label="Customer"
+                    value={filters.customer}
+                    options={uniqueCustomers}
+                    isOpen={openState.customer}
+                    setIsOpen={(v) => setOpenState({ ...openState, customer: v })}
+                    onSelect={(v) => setFilters({ ...filters, customer: v })}
+                />
+
+                <FilterDropdown
+                    label="Product"
+                    value={filters.product}
+                    options={uniqueProducts}
+                    isOpen={openState.product}
+                    setIsOpen={(v) => setOpenState({ ...openState, product: v })}
+                    onSelect={(v) => setFilters({ ...filters, product: v })}
+                />
+
+                <div className="flex-1 p-2 bg-slate-50/50 rounded-lg transition border border-transparent hover:border-slate-200">
+                    <label htmlFor="order-date" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block cursor-pointer">Order Date</label>
+                    <div className="flex items-center justify-between gap-2">
+                        <input
+                            id="order-date"
+                            type="date"
+                            value={filters.date}
+                            onChange={(e) => setFilters({ ...filters, date: e.target.value })}
+                            className="text-sm font-medium text-slate-700 bg-transparent border-none outline-none w-full cursor-pointer"
+                            placeholder="yyyy-mm-dd"
+                        />
+                        <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    </div>
+                </div>
+
+                <FilterDropdown
+                    label="Collection Point"
+                    value={filters.origin}
+                    options={uniqueOrigins}
+                    isOpen={openState.origin}
+                    setIsOpen={(v) => setOpenState({ ...openState, origin: v })}
+                    onSelect={(v) => setFilters({ ...filters, origin: v })}
+                />
+
+                <FilterDropdown
+                    label="Transporter"
+                    value={filters.transporter}
+                    options={uniqueTransporters}
+                    isOpen={openState.transporter}
+                    setIsOpen={(v) => setOpenState({ ...openState, transporter: v })}
+                    onSelect={(v) => setFilters({ ...filters, transporter: v })}
+                />
+
+                <FilterDropdown
+                    label="Entry Type"
+                    value={filters.entryType}
+                    options={["All Entries", "Matched Only", "Non-Matched Only"]}
+                    isOpen={openState.entryType}
+                    setIsOpen={(v) => setOpenState({ ...openState, entryType: v })}
+                    onSelect={(v) => setFilters({ ...filters, entryType: v })}
+                />
+
+                <div className="flex items-center gap-2 shrink-0">
+                    {hasActiveFilters && (
+                        <button
+                            onClick={clearFilters}
+                            className="flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition whitespace-nowrap"
+                        >
+                            <X className="w-4 h-4 mr-1" />
+                            Clear
+                        </button>
+                    )}
+                    <span className="text-xs text-slate-400 whitespace-nowrap">{filteredCount} of {totalCount}</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function LoadingBoardPage() {
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     const SITE_ID = process.env.NEXT_PUBLIC_SITE_ID;
@@ -37,8 +226,8 @@ export default function LoadingBoardPage() {
             // Filter by site ID for Lions Park (only show allocations for this site)
             // Use limit=500 to ensure all active allocations are returned for the operational board
             const allocationsUrl = SITE_ID
-                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}&limit=500`
-                : `${API_BASE_URL}/api/truck-allocations?limit=500`;
+                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}&limit=5000`
+                : `${API_BASE_URL}/api/truck-allocations?limit=5000`;
 
             const visitsUrl = SITE_ID
                 ? `${API_BASE_URL}/api/visits?siteId=${SITE_ID}`
@@ -237,154 +426,51 @@ export default function LoadingBoardPage() {
 
     const hasActiveFilters = filters.customer !== "All Customers" || filters.origin !== "All Sites" || filters.transporter !== "All Transporters" || filters.date !== "" || filters.product !== "All Products" || filters.search !== "" || filters.entryType !== "All Entries";
 
-    // Component for Filter Dropdowns
-    const FilterDropdown = ({
-        label,
-        value,
-        options,
-        isOpen,
-        setIsOpen,
-        onSelect
-    }: {
-        label: string,
-        value: string,
-        options: string[],
-        isOpen: boolean,
-        setIsOpen: (v: boolean) => void,
-        onSelect: (v: string) => void
-    }) => (
-        <div className="relative flex-1">
-            <div
-                onClick={() => setIsOpen(!isOpen)}
-                className="p-2 bg-slate-50/50 rounded-lg hover:bg-slate-50 transition cursor-pointer border border-transparent hover:border-slate-200"
-            >
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
-                <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-slate-700 truncate">{value}</p>
-                    <ChevronDown className="w-3 h-3 text-slate-400" />
-                </div>
-            </div>
-            {isOpen && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-                    {options.map(option => (
-                        <button
-                            key={option}
-                            onClick={() => {
-                                onSelect(option);
-                                setIsOpen(false);
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
-                        >
-                            {option}
-                        </button>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
+    // Compute KPIs from real data
+    const kpis = useMemo(() => {
+        const now = Date.now();
+        const oneHourAgo = now - 60 * 60 * 1000;
+        const pendingStatuses = ['scheduled', 'in_transit'];
+        const checkedInStatuses = ['arrived', 'weighing'];
+        const departedStatuses = ['departed', 'completed', 'cancelled'];
 
-    // Modified FilterBar to accept openState props
-    const FilterBar = ({
-        onExpandMode = false,
-        openState,
-        setOpenState
-    }: {
-        onExpandMode?: boolean,
-        openState: typeof isMainFilterOpen,
-        setOpenState: (v: typeof isMainFilterOpen) => void
-    }) => (
-        <div className={cn(
-            "bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2 transition-all",
-            onExpandMode ? "border-0 shadow-none p-0" : ""
-        )}>
-            {/* Search row */}
-            <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                    type="text"
-                    value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    placeholder="Search by plate, driver, order #, product, customer..."
-                    className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                />
-            </div>
-            {/* Dropdown filters row */}
-            <div className="flex flex-col md:flex-row gap-2">
-                <FilterDropdown
-                    label="Customer"
-                    value={filters.customer}
-                    options={uniqueCustomers}
-                    isOpen={openState.customer}
-                    setIsOpen={(v) => setOpenState({ ...openState, customer: v })}
-                    onSelect={(v) => setFilters({ ...filters, customer: v })}
-                />
+        const pendingCount = filteredAllocations.filter(a =>
+            pendingStatuses.includes((a.siteStatus || a.status)?.toLowerCase() || 'scheduled')
+        ).length;
+        const checkedInCount = filteredAllocations.filter(a =>
+            checkedInStatuses.includes((a.siteStatus || a.status)?.toLowerCase() || '')
+        ).length;
+        const departedCount = filteredAllocations.filter(a =>
+            departedStatuses.includes((a.siteStatus || a.status)?.toLowerCase() || '')
+        ).length;
 
-                <FilterDropdown
-                    label="Product"
-                    value={filters.product}
-                    options={uniqueProducts}
-                    isOpen={openState.product}
-                    setIsOpen={(v) => setOpenState({ ...openState, product: v })}
-                    onSelect={(v) => setFilters({ ...filters, product: v })}
-                />
+        // Trucks that arrived at Lions within the last hour
+        const trucksPerHour = filteredAllocations.filter(a => {
+            const arrivalTime = a.lionsTimestamp || a.actualArrival;
+            if (!arrivalTime) return false;
+            const t = new Date(arrivalTime).getTime();
+            return t > oneHourAgo && t <= now;
+        }).length;
 
-                <div className="flex-1 p-2 bg-slate-50/50 rounded-lg transition border border-transparent hover:border-slate-200">
-                    <label htmlFor="order-date" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block cursor-pointer">Order Date</label>
-                    <div className="flex items-center justify-between gap-2">
-                        <input
-                            id="order-date"
-                            type="date"
-                            value={filters.date}
-                            onChange={(e) => setFilters({ ...filters, date: e.target.value })}
-                            className="text-sm font-medium text-slate-700 bg-transparent border-none outline-none w-full cursor-pointer"
-                            placeholder="yyyy-mm-dd"
-                        />
-                        <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                    </div>
-                </div>
+        // Average time in park for currently checked-in trucks
+        const checkedInTrucks = filteredAllocations.filter(a =>
+            checkedInStatuses.includes((a.siteStatus || a.status)?.toLowerCase() || '')
+        );
+        const trucksWithArrival = checkedInTrucks.filter(a => a.lionsTimestamp || a.actualArrival);
+        let avgTimeInPark = '—';
+        if (trucksWithArrival.length > 0) {
+            const totalMs = trucksWithArrival.reduce((sum, a) => {
+                const arrivalTime = new Date(a.lionsTimestamp || a.actualArrival).getTime();
+                return sum + (now - arrivalTime);
+            }, 0);
+            const avgMs = totalMs / trucksWithArrival.length;
+            const hours = Math.floor(avgMs / (1000 * 60 * 60));
+            const minutes = Math.round((avgMs % (1000 * 60 * 60)) / (1000 * 60));
+            avgTimeInPark = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+        }
 
-                <FilterDropdown
-                    label="Collection Point"
-                    value={filters.origin}
-                    options={uniqueOrigins}
-                    isOpen={openState.origin}
-                    setIsOpen={(v) => setOpenState({ ...openState, origin: v })}
-                    onSelect={(v) => setFilters({ ...filters, origin: v })}
-                />
-
-                <FilterDropdown
-                    label="Transporter"
-                    value={filters.transporter}
-                    options={uniqueTransporters}
-                    isOpen={openState.transporter}
-                    setIsOpen={(v) => setOpenState({ ...openState, transporter: v })}
-                    onSelect={(v) => setFilters({ ...filters, transporter: v })}
-                />
-
-                <FilterDropdown
-                    label="Entry Type"
-                    value={filters.entryType}
-                    options={["All Entries", "Matched Only", "Non-Matched Only"]}
-                    isOpen={openState.entryType}
-                    setIsOpen={(v) => setOpenState({ ...openState, entryType: v })}
-                    onSelect={(v) => setFilters({ ...filters, entryType: v })}
-                />
-
-                <div className="flex items-center gap-2 shrink-0">
-                    {hasActiveFilters && (
-                        <button
-                            onClick={clearFilters}
-                            className="flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition whitespace-nowrap"
-                        >
-                            <X className="w-4 h-4 mr-1" />
-                            Clear
-                        </button>
-                    )}
-                    <span className="text-xs text-slate-400 whitespace-nowrap">{filteredAllocations.length} of {allocations.length}</span>
-                </div>
-            </div>
-        </div>
-    );
+        return { trucksPerHour, avgTimeInPark, pendingCount, checkedInCount, departedCount };
+    }, [filteredAllocations]);
 
     return (
         <div className="space-y-6 font-sans">
@@ -439,6 +525,16 @@ export default function LoadingBoardPage() {
                                     onExpandMode={true}
                                     openState={isModalFilterOpen}
                                     setOpenState={setIsModalFilterOpen}
+                                    filters={filters}
+                                    setFilters={setFilters}
+                                    uniqueCustomers={uniqueCustomers}
+                                    uniqueProducts={uniqueProducts}
+                                    uniqueOrigins={uniqueOrigins}
+                                    uniqueTransporters={uniqueTransporters}
+                                    hasActiveFilters={hasActiveFilters}
+                                    clearFilters={clearFilters}
+                                    filteredCount={filteredAllocations.length}
+                                    totalCount={allocations.length}
                                 />
                             </div>
 
@@ -560,6 +656,16 @@ export default function LoadingBoardPage() {
             <FilterBar
                 openState={isMainFilterOpen}
                 setOpenState={setIsMainFilterOpen}
+                filters={filters}
+                setFilters={setFilters}
+                uniqueCustomers={uniqueCustomers}
+                uniqueProducts={uniqueProducts}
+                uniqueOrigins={uniqueOrigins}
+                uniqueTransporters={uniqueTransporters}
+                hasActiveFilters={hasActiveFilters}
+                clearFilters={clearFilters}
+                filteredCount={filteredAllocations.length}
+                totalCount={allocations.length}
             />
 
             {/* KPI Cards */}
@@ -568,7 +674,8 @@ export default function LoadingBoardPage() {
                     <div className="flex justify-between items-start z-10 relative">
                         <div>
                             <p className="text-xs font-semibold text-slate-500 mb-1">Total Trucks</p>
-                            <h3 className="text-2xl font-bold text-slate-900">{filteredAllocations.length} Active</h3>
+                            <h3 className="text-2xl font-bold text-slate-900">{filteredAllocations.length}</h3>
+                            <p className="text-xs text-slate-400 mt-1">{kpis.pendingCount} pending · {kpis.checkedInCount} checked in · {kpis.departedCount} departed</p>
                         </div>
                         <Truck className="w-8 h-8 text-blue-100" strokeWidth={1.5} />
                     </div>
@@ -578,7 +685,7 @@ export default function LoadingBoardPage() {
                     <div className="flex justify-between items-start z-10 relative">
                         <div>
                             <p className="text-xs font-semibold text-slate-500 mb-1">Trucks/Hour</p>
-                            <h3 className="text-2xl font-bold text-slate-900">12 This Hour</h3>
+                            <h3 className="text-2xl font-bold text-slate-900">{kpis.trucksPerHour} This Hour</h3>
                         </div>
                         <Clock className="w-8 h-8 text-emerald-100" strokeWidth={1.5} />
                     </div>
@@ -588,7 +695,7 @@ export default function LoadingBoardPage() {
                     <div className="flex justify-between items-start z-10 relative">
                         <div>
                             <p className="text-xs font-semibold text-slate-500 mb-1">Avg. Time in Park</p>
-                            <h3 className="text-2xl font-bold text-slate-900">56h 42m</h3>
+                            <h3 className="text-2xl font-bold text-slate-900">{kpis.avgTimeInPark}</h3>
                         </div>
                         <div className="text-amber-300">
                             {/* Simple trend icon representation */}

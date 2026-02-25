@@ -8,11 +8,11 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBL
 
 type Stage = "staging" | "pending_arrival" | "checked_in" | "departed";
 
-const stages: { id: Stage; title: string; icon: any; color: string; bgColor: string; count: number }[] = [
-    { id: "staging", title: "Staging", icon: Layers, color: "text-amber-600", bgColor: "bg-amber-50", count: 802 },
-    { id: "pending_arrival", title: "Pending Arrival", icon: Clock, color: "text-blue-600", bgColor: "bg-blue-50", count: 198 },
-    { id: "checked_in", title: "Checked In", icon: CheckCircle2, color: "text-emerald-600", bgColor: "bg-emerald-50", count: 0 },
-    { id: "departed", title: "Departed", icon: TrendingUp, color: "text-purple-600", bgColor: "bg-purple-50", count: 0 },
+const stageDefinitions: { id: Stage; title: string; icon: any; color: string; bgColor: string }[] = [
+    { id: "staging", title: "Staging", icon: Layers, color: "text-amber-600", bgColor: "bg-amber-50" },
+    { id: "pending_arrival", title: "Pending Arrival", icon: Clock, color: "text-blue-600", bgColor: "bg-blue-50" },
+    { id: "checked_in", title: "Checked In", icon: CheckCircle2, color: "text-emerald-600", bgColor: "bg-emerald-50" },
+    { id: "departed", title: "Departed", icon: TrendingUp, color: "text-purple-600", bgColor: "bg-purple-50" },
 ];
 
 export default function PortOperationsBoardPage() {
@@ -37,6 +37,12 @@ export default function PortOperationsBoardPage() {
             setLoading(false);
         }
     };
+
+    // Compute stages with real counts from fetched trucks
+    const stages = stageDefinitions.map(stageDef => ({
+        ...stageDef,
+        count: trucks.filter((truck: any) => truck.stage === stageDef.id).length,
+    }));
 
     const getTrucksByStage = (stage: Stage) => {
         return trucks.filter((truck: any) => truck.stage === stage);
@@ -89,26 +95,26 @@ export default function PortOperationsBoardPage() {
                         <span className="text-sm font-medium text-slate-500">Today Total</span>
                         <Truck className="w-4 h-4 text-blue-500" />
                     </div>
-                    <div className="text-2xl font-bold text-slate-900">93</div>
+                    <div className="text-2xl font-bold text-slate-900">{trucks.length}</div>
                     <p className="text-xs text-slate-500 mt-1">Total Trucks</p>
                 </div>
 
                 <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-slate-500">This Hour</span>
-                        <Clock className="w-4 h-4 text-emerald-500" />
+                        <span className="text-sm font-medium text-slate-500">Checked In</span>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                     </div>
-                    <div className="text-2xl font-bold text-slate-900">16</div>
-                    <p className="text-xs text-slate-500 mt-1">Trucks/Hour</p>
+                    <div className="text-2xl font-bold text-slate-900">{trucks.filter((t: any) => t.stage === 'checked_in').length}</div>
+                    <p className="text-xs text-slate-500 mt-1">At Port</p>
                 </div>
 
                 <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-slate-500">Avg. Time</span>
+                        <span className="text-sm font-medium text-slate-500">Departed</span>
                         <TrendingUp className="w-4 h-4 text-purple-500" />
                     </div>
-                    <div className="text-2xl font-bold text-slate-900">25h 54m</div>
-                    <p className="text-xs text-slate-500 mt-1">Avg. Time in Park</p>
+                    <div className="text-2xl font-bold text-slate-900">{trucks.filter((t: any) => t.stage === 'departed').length}</div>
+                    <p className="text-xs text-slate-500 mt-1">Completed Today</p>
                 </div>
             </div>
 
@@ -138,7 +144,7 @@ export default function PortOperationsBoardPage() {
                                                 stage.id === "checked_in" ? "bg-emerald-600 text-white" :
                                                     "bg-purple-600 text-white"
                                     )}>
-                                        {stage.count > 0 ? stage.count : trucks.length}
+                                        {trucks.length}
                                     </div>
                                 </div>
                             </div>

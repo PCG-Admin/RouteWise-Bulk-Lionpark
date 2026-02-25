@@ -32,7 +32,7 @@ export interface ParsedTruckAllocation {
 }
 
 export interface ParsedExcelData {
-  format: 'dispatch' | 'entity' | 'weighbridge' | 'standard';
+  format: 'dispatch' | 'entity' | 'weighbridge' | 'standard' | 'gcos';
   order: ParsedOrder;
   allocations: ParsedTruckAllocation[];
 }
@@ -40,17 +40,18 @@ export interface ParsedExcelData {
 /**
  * Detect file format by checking for dispatch-style or entity-style header
  */
-function detectFormat(sheet: XLSX.WorkSheet): 'dispatch' | 'entity' | 'weighbridge' | 'standard' {
+function detectFormat(sheet: XLSX.WorkSheet): 'dispatch' | 'entity' | 'weighbridge' | 'standard' | 'gcos' {
   // Check multiple cells for format indicators
   const cellA1 = sheet['A1'];
   const cellA2 = sheet['A2'];
   const cellA3 = sheet['A3'];
   const cellB1 = sheet['B1'];
+  const cellB2 = sheet['B2'];
 
   // Helper to get cell value as uppercase string
   const getCellValue = (cell: any): string => {
-    if (cell && cell.v && typeof cell.v === 'string') {
-      return cell.v.toUpperCase();
+    if (cell && cell.v !== undefined && cell.v !== null) {
+      return String(cell.v).toUpperCase();
     }
     return '';
   };
@@ -59,6 +60,7 @@ function detectFormat(sheet: XLSX.WorkSheet): 'dispatch' | 'entity' | 'weighbrid
   const a2 = getCellValue(cellA2);
   const a3 = getCellValue(cellA3);
   const b1 = getCellValue(cellB1);
+  const b2 = getCellValue(cellB2);
 
   // Weighbridge Details Report format (Northam, etc.)
   if (a1.includes('WEIGHBRIDGE') || a1.includes('DETAILS REPORT') ||
@@ -66,13 +68,18 @@ function detectFormat(sheet: XLSX.WorkSheet): 'dispatch' | 'entity' | 'weighbrid
     return 'weighbridge';
   }
 
-  // Entity/Order Detail Report format
+  // Entity/Order Detail Report format (Samancor, EDSON — title in A2)
   if (a1.includes('ORDER DETAIL') || a2.includes('ORDER DETAIL') ||
       a1.includes('DISPATCH TICKET') || a2.includes('DISPATCH TICKET')) {
     return 'entity';
   }
 
-  // Dispatch/GCOS format
+  // GCOS format: Samancor Chrome GCOS 48hr Report (title in B2)
+  if (b2.includes('GCOS') || (b2.includes('SAMANCOR') && b2.includes('REPORT'))) {
+    return 'gcos';
+  }
+
+  // Dispatch format: DISPATCH TO DURBAN style (NAME OF SITE in A2)
   if (a2.includes('NAME OF SITE') || a2.includes('SITE:') || a2.includes('MINE') ||
       a1.includes('DISPATCH') || a2.includes('DISPATCH')) {
     return 'dispatch';
@@ -309,106 +316,124 @@ function parseStandardFormat(sheet: XLSX.WorkSheet, filename: string): ParsedExc
 }
 
 /**
+ * Scan a sheet row from startCol+1 rightward and return the first non-empty cell value.
+ * Used for entity format where label cells (e.g. "Order No:") and value cells
+ * (e.g. the actual order number) are separated by several empty columns.
+ */
+function getNextNonEmptyInRow(sheet: XLSX.WorkSheet, row: number, startCol: number, endCol: number): string {
+  for (let col = startCol + 1; col <= endCol; col++) {
+    const cell = sheet[XLSX.utils.encode_cell({ r: row, c: col })];
+    if (cell && cell.v !== null && cell.v !== undefined) {
+      const val = String(cell.v).trim();
+      if (val) return val;
+    }
+  }
+  return '';
+}
+
+/**
+ * Derive a human-readable destination from an Entity order number.
+ * Order numbers ending in "-BC" or "--BC" map to Bulk Connections, Durban.
+ */
+function deriveEntityDestination(orderNumber: string): string {
+  if (/[-_]BC$/i.test(orderNumber)) return 'Bulk Connections, Durban';
+  if (orderNumber.toUpperCase().includes('DURBAN')) return 'Durban Port';
+  return 'Port / Destination';
+}
+
+/**
  * Parse Entity format (Entity_EDSON, Entity_Samancor files)
  * Structure:
- * - Row 2: "Order Detail Report" title
- * - Row 6-8: Order details (Order No:, Material:, Customer/Supplier:)
- * - Row 10+: Column headers and truck data
+ * - Row 2:  "Order Detail Report" title  (A2)
+ * - Row 6:  Label cells in B, I, P, V — values in E, L, T, Y (separated by empty cols)
+ *           e.g. B6="Order No:" → E6=actual order number
+ * - Row 10: Column headers
+ * - Row 11+: Truck data
  */
 function parseEntityFormat(sheet: XLSX.WorkSheet, filename: string): ParsedExcelData {
   console.log('🔍 Parsing ENTITY format file:', filename);
 
-  // Extract order info by searching rows 4-9 for key fields
-  const rowrange = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  const sheetRange = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
   let orderNumber = '';
   let product = '';
   let clientName = '';
-  let supplierName = '';
 
-  // Search multiple rows for order metadata
-  console.log('🔍 Searching for Entity metadata in rows 4-9...');
-  for (let row = 3; row <= 9; row++) {
-    for (let col = 0; col <= Math.min(rowrange.e.c, 15); col++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-      const cell = sheet[cellAddress];
+  // The metadata row is row 6 (index 5). Labels and values are widely spaced across columns.
+  // Scan the entire row; when we find a label keyword, grab the next non-empty cell value.
+  const metaRows = [5, 6, 7]; // rows 6-8 (0-indexed) to be safe
+  console.log('🔍 Scanning Entity metadata rows 6-8 for label-value pairs...');
 
-      if (cell && cell.v) {
-        const value = String(cell.v);
-        const valueUpper = value.toUpperCase();
+  for (const metaRow of metaRows) {
+    for (let col = 0; col <= sheetRange.e.c; col++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r: metaRow, c: col })];
+      if (!cell || cell.v === null || cell.v === undefined) continue;
 
-        // Debug log all cells with potential keywords
-        if (valueUpper.includes('ORDER') || valueUpper.includes('MATERIAL') ||
-            valueUpper.includes('CUSTOMER') || valueUpper.includes('SUPPLIER') ||
-            valueUpper.includes('CHROME') || valueUpper.includes('SAMANCOR')) {
-          console.log(`  Row ${row + 1}, Col ${String.fromCharCode(65 + col)}: "${value}"`);
+      const value = String(cell.v).trim();
+      const valueUpper = value.toUpperCase();
+
+      if (valueUpper.includes('ORDER NO') && !orderNumber) {
+        // Value is embedded after colon (same cell) OR in a distant column to the right
+        if (value.includes(':') && value.split(':')[1].trim()) {
+          orderNumber = value.split(':')[1].trim();
+        } else {
+          orderNumber = getNextNonEmptyInRow(sheet, metaRow, col, sheetRange.e.c);
         }
+        console.log(`  Found Order No at col ${col}: "${orderNumber}"`);
+      }
 
-        // Try to get value from same cell (after colon) or next cell
-        const nextCellAddress = XLSX.utils.encode_cell({ r: row, c: col + 1 });
-        const nextCell = sheet[nextCellAddress];
-
-        // Extract order number
-        if (valueUpper.includes('ORDER NO') && !orderNumber) {
-          // Try same cell first (e.g., "Order No: XYZ")
-          if (value.includes(':')) {
-            const parts = value.split(':');
-            if (parts.length > 1 && parts[1].trim()) {
-              orderNumber = parts[1].trim();
-            }
-          }
-          // Otherwise check next cell
-          if (!orderNumber && nextCell && nextCell.v) {
-            orderNumber = String(nextCell.v).trim();
-          }
+      if (valueUpper.includes('MATERIAL') && !product) {
+        if (value.includes(':') && value.split(':')[1].trim()) {
+          product = value.split(':')[1].trim();
+        } else {
+          product = getNextNonEmptyInRow(sheet, metaRow, col, sheetRange.e.c);
         }
+        console.log(`  Found Material at col ${col}: "${product}"`);
+      }
 
-        // Extract material/product
-        if (valueUpper.includes('MATERIAL') && !product) {
-          if (value.includes(':')) {
-            const parts = value.split(':');
-            if (parts.length > 1 && parts[1].trim()) {
-              product = parts[1].trim();
-            }
-          }
-          if (!product && nextCell && nextCell.v) {
-            product = String(nextCell.v).trim();
-          }
+      if ((valueUpper.includes('CUSTOMER') || valueUpper.includes('SUPPLIER')) && !clientName) {
+        if (value.includes(':') && value.split(':')[1].trim()) {
+          clientName = value.split(':')[1].trim();
+        } else {
+          clientName = getNextNonEmptyInRow(sheet, metaRow, col, sheetRange.e.c);
         }
-
-        // Extract customer/supplier
-        if ((valueUpper.includes('CUSTOMER') || valueUpper.includes('SUPPLIER')) && !clientName) {
-          if (value.includes(':')) {
-            const parts = value.split(':');
-            if (parts.length > 1 && parts[1].trim()) {
-              clientName = parts[1].trim();
-            }
-          }
-          if (!clientName && nextCell && nextCell.v) {
-            clientName = String(nextCell.v).trim();
-          }
-        }
+        console.log(`  Found Client at col ${col}: "${clientName}"`);
       }
     }
+    if (orderNumber && product && clientName) break; // found everything early
   }
 
   console.log('Extracted metadata:', { orderNumber, product, clientName });
 
-  // Parse truck data starting from Row 10 (headers) and Row 11+ (data)
+  // Find the actual header row (look for "Horse Reg", "Ticket No", "Gross" etc.)
+  let headerRowIndex = 9; // default row 10 (0-indexed)
+  for (let row = 7; row <= 15; row++) {
+    const rowCells: string[] = [];
+    for (let col = 0; col <= Math.min(sheetRange.e.c, 25); col++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r: row, c: col })];
+      if (cell?.v) rowCells.push(String(cell.v).toLowerCase());
+    }
+    if (rowCells.some(v => v.includes('horse reg') || v.includes('ticket no') || v.includes('gross'))) {
+      headerRowIndex = row;
+      console.log(`✓ Found Entity header row at index ${headerRowIndex} (row ${headerRowIndex + 1})`);
+      break;
+    }
+  }
+
+  // Parse truck data from detected header row
   const truckData: any[] = XLSX.utils.sheet_to_json(sheet, {
-    range: 9, // Row 10 is index 9 (headers)
-    defval: null
+    range: headerRowIndex,
+    defval: null,
   });
 
   console.log(`✓ Extracted ${truckData.length} truck records`);
 
-  // Map to allocations with extensive column name matching
   const allocations: ParsedTruckAllocation[] = truckData
     .filter(row => row['Horse Reg'] || row['Ticket No'] || row['Truck Reg No'] || row['Registration'])
     .map(row => {
       const allocation: ParsedTruckAllocation = {
         vehicleReg: row['Horse Reg'] || row['Truck Reg No'] || row['Registration'] ||
                     row['Vehicle'] || row['Trailer 1 Reg No'] || '',
-        ticketNo: row['Ticket No'] || row['Original Ticket No'] || row['Ticket Day'] || row['Contact No'],
+        ticketNo: String(row['Ticket No'] || row['Original Ticket No'] || row['Ticket Day'] || ''),
         driverName: row['Driver'] || row['Driver Name'],
         transporter: row['Transporter'] || row['Haulier'] || row['Carrier'] || row['Freight Company'],
         grossWeight: String(row['Gross'] || row['Gross Weight'] || row['Advised Gross(Kgs)'] || ''),
@@ -417,13 +442,11 @@ function parseEntityFormat(sheet: XLSX.WorkSheet, filename: string): ParsedExcel
         productDescription: row['Product'] || row['Material'] || row['Commodity'],
       };
 
-      // Parse date (Excel serial number)
       const dateValue = row['Date'] || row['Date In'];
       if (dateValue) {
         if (dateValue instanceof Date) {
           allocation.scheduledDate = dateValue;
         } else if (typeof dateValue === 'number') {
-          // Excel serial date
           const excelEpoch = new Date(1899, 11, 30);
           allocation.scheduledDate = new Date(excelEpoch.getTime() + dateValue * 24 * 60 * 60 * 1000);
         } else if (typeof dateValue === 'string') {
@@ -435,24 +458,24 @@ function parseEntityFormat(sheet: XLSX.WorkSheet, filename: string): ParsedExcel
     })
     .filter(a => a.vehicleReg && a.vehicleReg.length > 0);
 
-  // Calculate total weight
   const totalNetWeight = allocations.reduce((sum, truck) => {
     const weight = parseFloat(truck.netWeight || '0');
     return sum + (isNaN(weight) ? 0 : weight);
   }, 0);
 
-  // If order number not found in Row 6, try filename
+  // Fallback: try to read full order number from Summary sheet (sheet C2 in the workbook)
+  // — not accessible here, so derive from the data sheet name if needed
   if (!orderNumber) {
     const match = filename.match(/Entity[_\s]+([^_]+)/i);
-    orderNumber = match ? match[1].replace(/\s+/g, '-') : `ORD-${Date.now()}`;
+    orderNumber = match ? match[1].replace(/\s+/g, '-') : `ENT-${Date.now()}`;
   }
 
   const order: ParsedOrder = {
     orderNumber: orderNumber || `ENT-${Date.now()}`,
     product: product || 'GENERAL FREIGHT',
-    clientName: clientName || 'Unknown Customer',
-    originAddress: 'Mine Site',
-    destinationAddress: 'Port/Destination',
+    clientName: clientName.trim() || 'Unknown Customer',
+    originAddress: clientName.trim() ? `${clientName.trim()} (Mine)` : 'Mine Site',
+    destinationAddress: deriveEntityDestination(orderNumber),
     totalQuantity: totalNetWeight,
     unit: 'kg',
   };
@@ -461,6 +484,125 @@ function parseEntityFormat(sheet: XLSX.WorkSheet, filename: string): ParsedExcel
 
   return {
     format: 'entity',
+    order,
+    allocations,
+  };
+}
+
+/**
+ * Parse GCOS format (Samancor Chrome GCOS 48hr Report)
+ * Structure:
+ * - B2: Report title ("Durban (Bulk Connection) - Samancor Chrome GCOS (48hr) Report...")
+ * - B5: Site/origin code (e.g. "WCM")
+ * - B6: Order/batch number (e.g. "W2632")
+ * - Row 7: Column headers (Transporter, Ticket Day, Site, Destination, Truck Reg No, ...)
+ * - Row 8+: Truck data — Transporter appears only on first row of each group
+ */
+function parseGCOSFormat(sheet: XLSX.WorkSheet, filename: string): ParsedExcelData {
+  console.log('🔍 Parsing GCOS format file:', filename);
+
+  const title = sheet['B2']?.v ? String(sheet['B2'].v).split('\n')[0].trim() : '';
+  const siteCode = sheet['B5']?.v ? String(sheet['B5'].v).trim() : '';
+  const orderNumber = sheet['B6']?.v ? String(sheet['B6'].v).trim() : '';
+
+  console.log(`  Title: ${title}`);
+  console.log(`  Site: ${siteCode}, Order: ${orderNumber}`);
+
+  // Find header row (look for "Truck Reg No" column)
+  let headerRowIndex = 6; // default row 7 (0-indexed)
+  const sheetRange = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  for (let row = 4; row <= 10; row++) {
+    const rowCells: string[] = [];
+    for (let col = 0; col <= sheetRange.e.c; col++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r: row, c: col })];
+      if (cell?.v) rowCells.push(String(cell.v).toLowerCase());
+    }
+    if (rowCells.some(v => v.includes('truck reg') || v.includes('truck reg no'))) {
+      headerRowIndex = row;
+      console.log(`✓ Found GCOS header row at index ${headerRowIndex} (row ${headerRowIndex + 1})`);
+      break;
+    }
+  }
+
+  const rawData: any[] = XLSX.utils.sheet_to_json(sheet, {
+    range: headerRowIndex,
+    defval: null,
+  });
+
+  // GCOS transporter name only appears on the first truck of each transporter group.
+  // Subsequent trucks in the group have an empty Transporter cell.
+  let currentTransporter = '';
+
+  const allocations: ParsedTruckAllocation[] = rawData
+    .map(row => {
+      // Update transporter when present (strip "#Trucks: N" annotation)
+      const transporterCell = row['Transporter'];
+      if (transporterCell) {
+        currentTransporter = String(transporterCell).split('\n')[0].trim();
+      }
+
+      // Truck Reg No column
+      const vehicleReg = String(row['Truck Reg No'] || '').trim();
+      if (!vehicleReg) return null;
+
+      // Header has newlines: 'Tare\n(KGs)', 'Waybill\n' — find by partial key match
+      const keys = Object.keys(row);
+      const tareKey = keys.find(k => k.toLowerCase().includes('tare'));
+      const waybillKey = keys.find(k => k.toLowerCase().includes('waybill'));
+      const grossKey = keys.find(k => k.toLowerCase().includes('advised gross'));
+      const netKey = keys.find(k => k.toLowerCase().includes('advised mass'));
+
+      const allocation: ParsedTruckAllocation = {
+        vehicleReg,
+        ticketNo: waybillKey ? String(row[waybillKey] || '').trim() : undefined,
+        transporter: currentTransporter || undefined,
+        driverId: row['Driver ID No'] ? String(row['Driver ID No']).trim() : undefined,
+        grossWeight: grossKey ? String(row[grossKey] || '').trim() : undefined,
+        tareWeight: tareKey ? String(row[tareKey] || '').trim() : undefined,
+        netWeight: netKey ? String(row[netKey] || '').trim() : undefined,
+        productDescription: title.toLowerCase().includes('chrome') ? 'Chrome Concentrate' : undefined,
+      };
+
+      const dateValue = row['Ticket Day'] || row['Released Time'];
+      if (dateValue instanceof Date) {
+        allocation.scheduledDate = dateValue;
+      }
+
+      return allocation;
+    })
+    .filter((a): a is ParsedTruckAllocation => a !== null && a.vehicleReg.length > 0);
+
+  const totalNetWeight = allocations.reduce((sum, a) => {
+    const w = parseFloat(a.netWeight || '0');
+    return sum + (isNaN(w) ? 0 : w);
+  }, 0);
+
+  // Destination comes from the "Destination" column of the first data row
+  const firstRow = rawData.find(r => r['Destination']);
+  const destination = firstRow?.['Destination']
+    ? String(firstRow['Destination']).trim()
+    : 'Bulk Connections, Durban';
+
+  const product = title.toLowerCase().includes('chrome') ? 'Chrome Concentrate' : 'GENERAL FREIGHT';
+
+  // Client name: extract from title (format: "Destination - ClientName GCOS Report")
+  const titleMatch = title.match(/-\s*(.+?)\s+GCOS/i);
+  const clientName = titleMatch ? titleMatch[1].trim() : (siteCode || 'Unknown Customer');
+
+  const order: ParsedOrder = {
+    orderNumber: orderNumber || `GCOS-${Date.now()}`,
+    product,
+    clientName,
+    originAddress: siteCode || 'Mine Site',
+    destinationAddress: destination,
+    totalQuantity: totalNetWeight,
+    unit: 'kg',
+  };
+
+  console.log(`✓ Created GCOS order: ${order.orderNumber} with ${allocations.length} trucks, ${totalNetWeight} kg total`);
+
+  return {
+    format: 'gcos',
     order,
     allocations,
   };
@@ -695,6 +837,8 @@ export function parseExcelFile(buffer: Buffer, filename: string): ParsedExcelDat
     result = parseEntityFormat(targetSheet, filename);
   } else if (format === 'weighbridge') {
     result = parseWeighbridgeFormat(targetSheet, filename);
+  } else if (format === 'gcos') {
+    result = parseGCOSFormat(targetSheet, filename);
   } else {
     result = parseStandardFormat(targetSheet, filename);
   }

@@ -209,10 +209,14 @@ router.post('/manual-upload', upload.single('image'), async (req, res) => {
     });
   } catch (error) {
     console.error('Manual upload error:', error);
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    const isApiKeyError = errMsg.includes('403') || errMsg.includes('leaked') || errMsg.includes('Forbidden') || errMsg.includes('API key');
     res.status(500).json({
       success: false,
-      error: 'Failed to process image with AI',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      error: isApiKeyError
+        ? 'Gemini API key is invalid or has been revoked. Please update GEMINI_API_KEY in the backend environment.'
+        : 'Failed to process image with AI',
+      message: errMsg
     });
   }
 });

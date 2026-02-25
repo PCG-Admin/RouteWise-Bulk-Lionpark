@@ -56,6 +56,14 @@ export default function HistoryPage() {
     const endIndex = startIndex + itemsPerPage;
     const paginatedHistory = history.slice(startIndex, endIndex);
 
+    // Summary KPIs computed from fetched data
+    const totalTransactions = history.reduce((sum, day) => sum + day.transactions, 0);
+    const totalWeight = history.reduce((sum, day) => sum + day.totalWeight, 0);
+    const avgDailyTransactions = history.length > 0 ? Math.round(totalTransactions / history.length) : 0;
+    const peakDay = history.length > 0
+        ? history.reduce((max, day) => day.transactions > max.transactions ? day : max, history[0])
+        : null;
+
     return (
         <div className="space-y-6">
             {/* Header Section */}
@@ -85,7 +93,7 @@ export default function HistoryPage() {
                             <p className="text-xs text-blue-700 font-medium uppercase tracking-wider">Total Transactions</p>
                         </div>
                     </div>
-                    <p className="text-3xl font-bold text-slate-900">723</p>
+                    <p className="text-3xl font-bold text-slate-900">{loading ? '—' : totalTransactions}</p>
                     <p className="text-xs text-slate-600 mt-1">Last 7 days</p>
                 </div>
 
@@ -96,7 +104,7 @@ export default function HistoryPage() {
                             <p className="text-xs text-emerald-700 font-medium uppercase tracking-wider">Total Weight</p>
                         </div>
                     </div>
-                    <p className="text-3xl font-bold text-slate-900">30,653t</p>
+                    <p className="text-3xl font-bold text-slate-900">{loading ? '—' : `${totalWeight.toLocaleString()}t`}</p>
                     <p className="text-xs text-slate-600 mt-1">Cumulative</p>
                 </div>
 
@@ -107,7 +115,7 @@ export default function HistoryPage() {
                             <p className="text-xs text-purple-700 font-medium uppercase tracking-wider">Avg Daily</p>
                         </div>
                     </div>
-                    <p className="text-3xl font-bold text-slate-900">103</p>
+                    <p className="text-3xl font-bold text-slate-900">{loading ? '—' : avgDailyTransactions}</p>
                     <p className="text-xs text-slate-600 mt-1">Transactions/day</p>
                 </div>
 
@@ -118,8 +126,8 @@ export default function HistoryPage() {
                             <p className="text-xs text-amber-700 font-medium uppercase tracking-wider">Peak Day</p>
                         </div>
                     </div>
-                    <p className="text-3xl font-bold text-slate-900">152</p>
-                    <p className="text-xs text-slate-600 mt-1">Jan 19, 2026</p>
+                    <p className="text-3xl font-bold text-slate-900">{loading ? '—' : (peakDay?.transactions ?? '—')}</p>
+                    <p className="text-xs text-slate-600 mt-1">{peakDay ? new Date(peakDay.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</p>
                 </div>
             </div>
 

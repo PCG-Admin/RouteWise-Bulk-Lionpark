@@ -230,8 +230,8 @@ class ANPRCheckerService {
 
         console.log(`   Site: ${siteId}, Direction: ${detection.direction}, Event: ${eventType}`);
 
-        // MODIFIED OPTION 2: Journey-based status logic
-        // - Entry anywhere: Only create journey entry, don't update allocation.status
+        // Status update logic:
+        // - Entry anywhere: Update allocation.status = 'arrived' + create journey entry
         // - Exit from Lions (site 1): Update allocation.status = 'in_transit'
         // - Exit from Bulk (site 2): Update allocation.status = 'completed'
 
@@ -239,9 +239,15 @@ class ANPRCheckerService {
         let allocationStatusUpdate: any = null;
 
         if (detection.direction === 'entry') {
-          // Entry detection: Just create journey entry, don't update allocation status
-          console.log(`   Entry detected - creating journey entry only (no allocation status update)`);
-          shouldUpdateAllocationStatus = false;
+          // Entry detection: Update allocation to 'arrived' and create journey entry
+          allocationStatusUpdate = {
+            status: 'arrived',
+            actualArrival: new Date(detection.detectedAt),
+            driverValidationStatus: 'pending_verification',
+            updatedAt: new Date(),
+          };
+          shouldUpdateAllocationStatus = true;
+          console.log(`   Entry detected at site ${siteId} - setting allocation status to 'arrived'`);
         } else {
           // Exit detection: Check driver validation and update allocation status based on site
           if (matchedAllocation.driverValidationStatus !== 'ready_for_dispatch') {
@@ -270,7 +276,7 @@ class ANPRCheckerService {
           }
         }
 
-        // Update allocation status only if needed (exits only)
+        // Update allocation status (entries → 'arrived', exits → 'in_transit'/'completed')
         if (shouldUpdateAllocationStatus && allocationStatusUpdate) {
           await db
             .update(truckAllocations)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { FileText, Filter, Download, Calendar, Loader2, AlertCircle, X, Truck, User, Phone, Weight, MapPin, Package, ClipboardCheck } from "lucide-react";
+import { FileText, Filter, Download, Calendar, Loader2, AlertCircle, X, Truck, User, Phone, Weight, MapPin, Package, ClipboardCheck, Trash2 } from "lucide-react";
 import ParkingTicketModal from "@/components/ParkingTicketModal";
 import ParkingTicketViewModal from "@/components/ParkingTicketViewModal";
 import { OrderDetailSlideOver } from "@/components/OrderDetailSlideOver";
@@ -58,6 +58,8 @@ export default function TransportationRecordsPage() {
     const [validatingVisitId, setValidatingVisitId] = useState<number | null>(null);
     const [validatingVisitData, setValidatingVisitData] = useState<any>(null);
     const [issuingPermitId, setIssuingPermitId] = useState<number | null>(null);
+    const [deletingId, setDeletingId] = useState<number | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ fullName: string; role: string } | null>(null);
 
     // Pagination
     const [currentPage, setCurrentPage] = useState(1);
@@ -77,6 +79,10 @@ export default function TransportationRecordsPage() {
 
     useEffect(() => {
         fetchAllocations();
+        fetch(`${API_BASE_URL}/api/auth/me`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(data => { if (data.success) setCurrentUser(data.user); })
+            .catch(() => {});
     }, []);
 
     const handleViewDetails = (allocation: TruckAllocation) => {
@@ -96,12 +102,12 @@ export default function TransportationRecordsPage() {
 
             // Filter by site ID for Lions Park (fetch both allocations and visits)
             const allocationsUrl = SITE_ID
-                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}&limit=500`
-                : `${API_BASE_URL}/api/truck-allocations?limit=500`;
+                ? `${API_BASE_URL}/api/truck-allocations?siteId=${SITE_ID}&limit=5000`
+                : `${API_BASE_URL}/api/truck-allocations?limit=5000`;
 
             const visitsUrl = SITE_ID
-                ? `${API_BASE_URL}/api/visits?siteId=${SITE_ID}`
-                : `${API_BASE_URL}/api/visits`;
+                ? `${API_BASE_URL}/api/visits?siteId=${SITE_ID}&limit=1000`
+                : `${API_BASE_URL}/api/visits?limit=1000`;
 
             const journeyUrl = SITE_ID
                 ? `${API_BASE_URL}/api/site-journey/site/${SITE_ID}/latest`
@@ -198,6 +204,42 @@ export default function TransportationRecordsPage() {
             showError('Failed to issue permit. Please try again.');
         } finally {
             setIssuingPermitId(null);
+        }
+    };
+
+    const handleDelete = async (allocation: TruckAllocation) => {
+        const confirmed = await confirm({
+            title: 'Delete Transportation Record',
+            message: `Permanently delete record for ${allocation.vehicleReg}? This cannot be undone.`,
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            variant: 'danger',
+        });
+        if (!confirmed) return;
+
+        setDeletingId(allocation.id);
+        try {
+            // Route to the correct endpoint based on record type
+            const isVisit = (allocation as any).type === 'visit';
+            const endpoint = isVisit
+                ? `${API_BASE_URL}/api/visits/${allocation.id}`
+                : `${API_BASE_URL}/api/truck-allocations/${allocation.id}`;
+
+            const response = await fetch(endpoint, {
+                method: 'DELETE',
+                credentials: 'include',
+            });
+            const result = await response.json();
+            if (result.success) {
+                await fetchAllocations();
+                success(`Record for ${allocation.vehicleReg} deleted.`);
+            } else {
+                showError(`Failed to delete: ${result.error}`);
+            }
+        } catch {
+            showError('Failed to delete record. Please try again.');
+        } finally {
+            setDeletingId(null);
         }
     };
 
@@ -640,12 +682,28 @@ export default function TransportationRecordsPage() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <button
-                                            onClick={() => handleViewDetails(allocation)}
-                                            className="text-blue-600 hover:text-blue-500 text-sm font-medium flex items-center gap-1"
-                                        >
-                                            <FileText className="w-3 h-3" /> View
-                                        </button>
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                onClick={() => handleViewDetails(allocation)}
+                                                className="text-blue-600 hover:text-blue-500 text-sm font-medium flex items-center gap-1"
+                                            >
+                                                <FileText className="w-3 h-3" /> View
+                                            </button>
+                                            {currentUser?.role === 'admin' && (
+                                                <button
+                                                    onClick={() => handleDelete(allocation)}
+                                                    disabled={deletingId === allocation.id}
+                                                    className="text-red-500 hover:text-red-700 text-sm font-medium flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    title="Delete record (admin only)"
+                                                >
+                                                    {deletingId === allocation.id ? (
+                                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                                    ) : (
+                                                        <Trash2 className="w-3 h-3" />
+                                                    )}
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
